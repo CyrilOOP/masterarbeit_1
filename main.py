@@ -3,7 +3,7 @@ import os
 from typing import Dict, List, Tuple, Any
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QListWidget, QLineEdit, QPushButton, QDoubleSpinBox, QMessageBox, QFileDialog, QCheckBox
+    QListWidget, QLineEdit, QPushButton, QDoubleSpinBox, QMessageBox, QFileDialog, QCheckBox,   QGridLayout
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon
@@ -37,10 +37,10 @@ class DataProcessingApp(QMainWindow):
     def init_ui(self):
         """Initialize the user interface."""
         self.setWindowTitle("Data Processing Toolkit")
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(100, 100, 800, 1000)
         self.setWindowIcon(QIcon("icon.png"))
 
-        # Apply dark theme
+        # Apply dark theme (unchanged)
         self.setStyleSheet("""
             QMainWindow {
                 background-color: #2E3440;
@@ -110,18 +110,34 @@ class DataProcessingApp(QMainWindow):
 
         # --- Steps to Run (Checkboxes) ---
         steps_group = QWidget()
-        steps_layout = QVBoxLayout(steps_group)
-        steps_layout.addWidget(QLabel("Processing Steps", font=QFont("Arial", 12, QFont.Bold)))
+        steps_layout = QGridLayout(steps_group)  # Use QGridLayout instead of QVBoxLayout
+        steps_layout.addWidget(QLabel("Processing Steps", font=QFont("Arial", 12, QFont.Bold)), 0, 0, 1,
+                               2)  # Span across 2 columns
 
+        # Add checkboxes in two columns
         self.checkboxes = {}
-        for step_name, enabled_by_default in self.default_config.items():
-            if step_name == "create_subsets_by_date":
-                continue  # Skip the first function (handled separately)
+        steps = list(self.default_config.items())  # Convert dictionary items to a list
 
+        # Skip the "create_subsets_by_date" step
+        steps = [step for step in steps if step[0] != "create_subsets_by_date"]
+
+        # Calculate the number of rows needed for the first column
+        num_steps = len(steps)
+        num_rows = (num_steps + 1) // 2  # Divide steps into two columns
+
+        # Add checkboxes to the grid layout
+        for i, (step_name, enabled_by_default) in enumerate(steps):
             checkbox = QCheckBox(step_name.replace("_", " ").title())
             checkbox.setChecked(enabled_by_default)
             self.checkboxes[step_name] = checkbox
-            steps_layout.addWidget(checkbox)
+
+            # Determine row and column
+            if i < num_rows:
+                row, col = i + 1, 0  # First column
+            else:
+                row, col = (i - num_rows) + 1, 1  # Second column
+
+            steps_layout.addWidget(checkbox, row, col)
 
             # Connect the "statistics" checkbox to the deselect_other_functions method
             if step_name == "statistics":
@@ -352,9 +368,9 @@ if __name__ == "__main__":
         "parse_time": True,
         "compute_heading_from_xy": True,
         "compute_yaw_rate_from_heading": True,
-        "generate_map": False,
         "save_to_csv": True,
         "enable_statistics_on_save": True,
+        "generate_map": False,
     }
 
     subset_folder = "subsets_by_date"

@@ -116,7 +116,7 @@ def data_filter_points_by_distance(df: pd.DataFrame, config: Dict[str, Any]) -> 
     """
     x_col = config["x_col"]
     y_col = config["y_col"]
-    min_distance = config["min_distance"]
+    min_distance = config.get("min_distance")
 
     # Check if the DataFrame is empty
     if df.empty:
