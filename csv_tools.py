@@ -210,14 +210,6 @@ def csv_get_statistics(file_path: str, config: Optional[Dict[str, Any]] = None) 
     else:
         stats_report.append("No numerical columns found.\n\n")
 
-    stats_report.append("=== Categorical Column Analysis ===\n")
-    categorical_columns = df.select_dtypes(include=["object"])
-    if not categorical_columns.empty:
-        for col in categorical_columns.columns:
-            stats_report.append(f"Top Values in '{col}':\n")
-            stats_report.append(categorical_columns[col].value_counts().head(5).to_string() + "\n\n")
-    else:
-        stats_report.append("No categorical columns found.\n\n")
 
     if 'DatumZeit' in df.columns:
         stats_report.append("=== DatumZeit Column Analysis ===\n")

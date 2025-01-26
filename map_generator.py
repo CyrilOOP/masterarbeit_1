@@ -6,7 +6,7 @@ import folium
 from folium.plugins import TimestampedGeoJson
 from matplotlib import colormaps, colors
 from branca.colormap import LinearColormap
-from typing import Optional, Dict, Any
+
 
 
 def generate_map_from_csv(subset_full_path: str) -> None:
@@ -276,15 +276,24 @@ def generate_map_from_csv(subset_full_path: str) -> None:
         # Default to "None" if the column does not exist
         smoothing_method = "None"
 
+    if "min_distance" in df.columns:
+        # Assuming the same min_distance applies to all rows
+        min_distance = df["min_distance"].iloc[0]
+    else:
+        # Fallback if the column doesn't exist
+        min_distance = "not applied"
+
     # Display the map title with the smoothing method
     title_html = f"""
         <div style="position: fixed; bottom: 10px; right: 10px; width: 160px; 
                     background-color: white; z-index: 9999; font-size: 16px; 
                     border: 2px solid black; padding: 10px;">
             <b>Date:</b> {day_display}<br>
-            <b>Smoothing:</b> {smoothing_method}
+            <b>Smoothing:</b> {smoothing_method}<br>
+            <b>Minimal Distance:</b> {min_distance}
         </div>
     """
+
     m.get_root().html.add_child(folium.Element(title_html))
 
     # -------------------------------------------------------------------------
