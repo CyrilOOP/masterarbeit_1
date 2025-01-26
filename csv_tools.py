@@ -151,15 +151,20 @@ def csv_group_by_date_and_save(df: pd.DataFrame, output_folder: str, config: Opt
     except Exception as e:
         raise ValueError(f"Error grouping and saving data: {e}")
 
-
-def csv_get_statistics(file_path: str, config: Optional[Dict[str, Any]] = None) -> None:
+def csv_get_statistics(file_path: str, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Generate and save enhanced statistics for a CSV file, including missing, zero value analysis,
-    and specific datetime analysis, to a text file.
+    and specific datetime analysis, to a text file. Also extracts and returns selected_smoothing_method
+    and min_distance from the DataFrame.
 
     Args:
         file_path: Path to the CSV file.
         config: Optional configuration dictionary for additional settings (e.g., encoding).
+
+    Returns:
+        A dictionary containing:
+            - selected_smoothing_method: The smoothing method extracted from the DataFrame.
+            - min_distance: The minimum distance value extracted from the DataFrame.
 
     Raises:
         ValueError: If there is an error generating or saving statistics.
@@ -172,6 +177,17 @@ def csv_get_statistics(file_path: str, config: Optional[Dict[str, Any]] = None) 
         df = pd.read_csv(file_path, encoding=encoding)
     except Exception as e:
         raise ValueError(f"Error loading file {file_path}: {e}")
+
+    # Extract selected_smoothing_method and min_distance from the DataFrame
+    if "selected_smoothing_method" in df.columns:
+        selected_smoothing_method = df["selected_smoothing_method"].iloc[0]  # Assuming it's the same for all rows
+    else:
+        selected_smoothing_method = "default_smoothing_method"  # Default value if column not found
+
+    if "min_distance" in df.columns:
+        min_distance = df["min_distance"].iloc[0]  # Assuming it's the same for all rows
+    else:
+        min_distance = 0  # Default value if column not found
 
     stats_report = [
         f"=== CSV File Statistics ===\n",
@@ -220,6 +236,11 @@ def csv_get_statistics(file_path: str, config: Optional[Dict[str, Any]] = None) 
     else:
         stats_report.append("DatumZeit column not found.\n\n")
 
+    # Add selected_smoothing_method and min_distance to the statistics report
+    stats_report.append("=== Additional Information ===\n")
+    stats_report.append(f"Selected Smoothing Method: {selected_smoothing_method}\n")
+    stats_report.append(f"Min Distance: {min_distance}\n\n")
+
     output_file = f"{os.path.splitext(file_path)[0]}_statistics.txt"
     try:
         with open(output_file, "w", encoding=encoding) as f:
@@ -228,6 +249,11 @@ def csv_get_statistics(file_path: str, config: Optional[Dict[str, Any]] = None) 
     except Exception as e:
         raise ValueError(f"Error writing statistics to file: {e}")
 
+    # Return selected_smoothing_method and min_distance
+    return {
+        "selected_smoothing_method": selected_smoothing_method,
+        "min_distance": min_distance
+    }
 
 def subsets_by_date(folder_path: str, config: Optional[Dict[str, Any]] = None) -> List[str]:
     """

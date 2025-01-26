@@ -1,11 +1,9 @@
-#git test
-
 import sys
 import os
 from typing import Dict, List, Tuple, Any
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QListWidget, QLineEdit, QPushButton, QDoubleSpinBox, QMessageBox, QProgressBar, QFileDialog, QCheckBox
+    QListWidget, QLineEdit, QPushButton, QDoubleSpinBox, QMessageBox, QFileDialog, QCheckBox
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon
@@ -86,17 +84,6 @@ class DataProcessingApp(QMainWindow):
                 border-radius: 5px;
                 padding: 5px;
             }
-            QProgressBar {
-                background-color: #3B4252;
-                color: #D8DEE9;
-                border: 1px solid #4C566A;
-                border-radius: 5px;
-                text-align: center;
-            }
-            QProgressBar::chunk {
-                background-color: #5E81AC;
-                border-radius: 5px;
-            }
             QCheckBox {
                 color: #D8DEE9;
                 font-size: 14px;
@@ -118,12 +105,6 @@ class DataProcessingApp(QMainWindow):
         self.first_function_button.setFont(QFont("Arial", 12))
         self.first_function_button.clicked.connect(self.execute_first_function)
         first_function_layout.addWidget(self.first_function_button)
-
-        # Refresh button
-        self.refresh_button = QPushButton("Refresh Subsets")
-        self.refresh_button.setFont(QFont("Arial", 12))
-        self.refresh_button.clicked.connect(self.refresh_subsets)
-        first_function_layout.addWidget(self.refresh_button)
 
         main_layout.addWidget(first_function_group)
 
@@ -164,7 +145,7 @@ class DataProcessingApp(QMainWindow):
         self.subset_list.setSelectionMode(QListWidget.MultiSelection)
         subsets_layout.addWidget(self.subset_list)
 
-        # Load subset files using the subsets_by_date function
+        # Load subset files
         self.refresh_subsets()
 
         main_layout.addWidget(subsets_group)
@@ -182,11 +163,6 @@ class DataProcessingApp(QMainWindow):
         distance_layout.addWidget(self.distance_input)
 
         main_layout.addWidget(distance_group)
-
-        # --- Progress Bar ---
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        main_layout.addWidget(self.progress_bar)
 
         # --- Start Processing Button ---
         self.start_button = QPushButton("Start Processing")
@@ -239,7 +215,7 @@ class DataProcessingApp(QMainWindow):
                 return
 
             # Group by date and save subsets
-            csv_group_by_date_and_save(df, self.subset_folder, column_name="DatumZeit")
+            csv_group_by_date_and_save(df, self.subset_folder)
             print("Grouping by date completed.")
 
             # Refresh the subset list
@@ -282,23 +258,13 @@ class DataProcessingApp(QMainWindow):
         for subset in self.selected_subsets:
             print(subset)
 
-        # Show progress bar
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setValue(0)
-
-        # Simulate processing (replace with actual processing logic)
-        for i in range(101):
-            self.progress_bar.setValue(i)
-            QApplication.processEvents()  # Update the UI
-            import time
-            time.sleep(0.05)  # Simulate work
-
         # Close the window
         self.close()
 
     def get_results(self) -> Tuple[Dict[str, bool], List[str], float]:
         """Return the selected steps, subsets, and minimum distance."""
         return self.selected_steps, self.selected_subsets, self.min_distance
+
 
 def select_steps_and_subsets_with_gui(
     default_config: Dict[str, bool],
@@ -374,7 +340,6 @@ def main(config: Dict[str, Any], subsets: List[str]) -> None:
             map_source_path = save_path if config.get("save_to_csv", True) else subset_full_path
             print(f"Generating map using: {map_source_path}")
             generate_map_from_csv(map_source_path)
-
 
 
 if __name__ == "__main__":
