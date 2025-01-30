@@ -37,7 +37,7 @@ class DataProcessingApp(QMainWindow):
     def init_ui(self):
         """Initialize the user interface."""
         self.setWindowTitle("Data Processing Toolkit")
-        self.setGeometry(100, 100, 800, 1000)
+        self.setWindowState(Qt.WindowMaximized)
         self.setWindowIcon(QIcon("icon.png"))
 
         # Apply dark theme (unchanged)
@@ -47,7 +47,10 @@ class DataProcessingApp(QMainWindow):
             }
             QLabel {
                 color: #D8DEE9;
-                font-size: 14px;
+                font-size: 18px;  /* Increase font size */
+                font-weight: bold;  /* Make it bold */
+                text-transform: uppercase;  /* Convert text to uppercase */
+                letter-spacing: 1px;  /* Add slight spacing between letters */
             }
             QListWidget {
                 background-color: #3B4252;
@@ -98,7 +101,7 @@ class DataProcessingApp(QMainWindow):
         # --- First Function: Create Subsets by Date ---
         first_function_group = QWidget()
         first_function_layout = QVBoxLayout(first_function_group)
-        first_function_layout.addWidget(QLabel("Create Subsets by Date", font=QFont("Arial", 12, QFont.Bold)))
+        first_function_layout.addWidget(QLabel("Create Subsets by Date"))
 
         # Button to execute the first function
         self.first_function_button = QPushButton("Select File and Create Subsets")
@@ -110,45 +113,56 @@ class DataProcessingApp(QMainWindow):
 
         # --- Steps to Run (Checkboxes) ---
         steps_group = QWidget()
-        steps_layout = QGridLayout(steps_group)  # Use QGridLayout instead of QVBoxLayout
-        steps_layout.addWidget(QLabel("Processing Steps", font=QFont("Arial", 12, QFont.Bold)), 0, 0, 1,
-                               2)  # Span across 2 columns
+        steps_layout = QGridLayout(steps_group)  # Keep two-column layout
 
-        # Add checkboxes in two columns
+        steps_layout.addWidget(QLabel("Processing Steps"), 0, 0, 1, 2)  # Title spans 2 columns
+
         self.checkboxes = {}
-        steps = list(self.default_config.items())  # Convert dictionary items to a list
+        steps = list(self.default_config.items())
 
-        # Skip the "create_subsets_by_date" step
+        # ❌ Skip "create_subsets_by_date"
         steps = [step for step in steps if step[0] != "create_subsets_by_date"]
 
-        # Calculate the number of rows needed for the first column
+        # 🔢 Divide checkboxes into two columns
         num_steps = len(steps)
-        num_rows = (num_steps + 1) // 2  # Divide steps into two columns
+        num_rows = (num_steps + 1) // 2  # First column gets half + 1 if odd
 
-        # Add checkboxes to the grid layout
-        for i, (step_name, enabled_by_default) in enumerate(steps):
-            checkbox = QCheckBox(step_name.replace("_", " ").title())
+        for index, (step_name, enabled_by_default) in enumerate(steps):
+            checkbox = QCheckBox(step_name.replace("_", " ").title())  # Make it pretty
             checkbox.setChecked(enabled_by_default)
             self.checkboxes[step_name] = checkbox
 
-            # Determine row and column
-            if i < num_rows:
-                row, col = i + 1, 0  # First column
-            else:
-                row, col = (i - num_rows) + 1, 1  # Second column
+            # 📌 Place checkboxes in two columns
+            row = index % num_rows + 1  # Row shifts down every `num_rows`
+            col = index // num_rows  # 0 = first column, 1 = second column
 
-            steps_layout.addWidget(checkbox, row, col)
+            steps_layout.addWidget(checkbox, row, col)  # Add checkbox to grid
 
-            # Connect the "statistics" checkbox to the deselect_other_functions method
+            # 📌 Connect "statistics" checkbox to custom function
             if step_name == "statistics":
                 checkbox.stateChanged.connect(self.deselect_other_functions)
 
-        main_layout.addWidget(steps_group)
+        # 🔽 Create a **horizontal layout** for buttons
+        buttons_group = QWidget()
+        buttons_layout = QHBoxLayout(buttons_group)  # Make them side by side
+
+        self.select_all_button = QPushButton("Select All")
+        self.select_all_button.clicked.connect(self.select_all_steps)
+        buttons_layout.addWidget(self.select_all_button)  # Add first button
+
+        self.unselect_all_button = QPushButton("Unselect All")
+        self.unselect_all_button.clicked.connect(self.unselect_all_steps)
+        buttons_layout.addWidget(self.unselect_all_button)  # Add second button
+
+        # 🔥 Add the buttons **AFTER** the checkboxes module
+        steps_layout.addWidget(buttons_group, num_rows + 1, 0, 1, 2)  # Span both columns
+
+        main_layout.addWidget(steps_group)  # Finally, add everything to main layout
 
         # --- Subsets to Process (List with Search) ---
         subsets_group = QWidget()
         subsets_layout = QVBoxLayout(subsets_group)
-        subsets_layout.addWidget(QLabel("Subsets to Process", font=QFont("Arial", 12, QFont.Bold)))
+        subsets_layout.addWidget(QLabel("Subsets to Process"))
 
         # Search bar
         self.search_bar = QLineEdit()
@@ -166,19 +180,7 @@ class DataProcessingApp(QMainWindow):
 
         main_layout.addWidget(subsets_group)
 
-        # --- Minimum Distance Input ---
-        distance_group = QWidget()
-        distance_layout = QHBoxLayout(distance_group)
-        distance_layout.addWidget(QLabel("Minimum Distance (meters):"))
 
-        self.distance_input = QDoubleSpinBox()
-        self.distance_input.setRange(0.1, 1000.0)
-        self.distance_input.setValue(1.0)
-        self.distance_input.setSingleStep(0.1)
-        self.distance_input.setToolTip("Set the minimum distance for filtering points")
-        distance_layout.addWidget(self.distance_input)
-
-        main_layout.addWidget(distance_group)
 
         # --- Start Processing Button ---
         self.start_button = QPushButton("Start Processing")
@@ -187,6 +189,14 @@ class DataProcessingApp(QMainWindow):
         self.start_button.setToolTip("Start processing the selected subsets")
         self.start_button.clicked.connect(self.on_submit)
         main_layout.addWidget(self.start_button)
+
+    def select_all_steps(self):
+        for step_name, checkbox in self.checkboxes.items():
+            checkbox.setChecked(True)
+
+    def unselect_all_steps(self):
+        for step_name, checkbox in self.checkboxes.items():
+            checkbox.setChecked(False)
 
     def deselect_other_functions(self, state: int):
         """
