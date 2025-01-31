@@ -1,4 +1,6 @@
 import os
+
+import numpy as np
 import pandas as pd
 import geopandas as gpd
 from shapely.geometry import Point
@@ -181,6 +183,11 @@ def generate_map_from_csv(subset_full_path: str) -> None:
         gier_path_fg = folium.FeatureGroup(name="Yaw Rate Path (Gier)", show=False)
 
         gier_min, gier_max = gdf["Gier"].min(), gdf["Gier"].max()
+
+        # Ensure color scale is centered around zero
+        gier_abs_max = max(abs(gier_min), abs(gier_max))
+        gier_min, gier_max = -gier_abs_max, gier_abs_max  # Make it symmetric around 0
+
         gier_norm = colors.Normalize(vmin=gier_min, vmax=gier_max)
         gier_cmap = colormaps.get_cmap("coolwarm")
 
@@ -199,8 +206,8 @@ def generate_map_from_csv(subset_full_path: str) -> None:
 
         gier_path_fg.add_to(m)
 
-        # Gier Legend
-        gier_color_steps = range(int(gier_min), int(gier_max) + 1, 1)
+        # Gier Legend (Centered at Zero)
+        gier_color_steps = np.linspace(gier_min, gier_max, num=100)  # Smooth gradient
         gier_color_list = [colors.to_hex(gier_cmap(gier_norm(v))) for v in gier_color_steps]
         gier_colormap = LinearColormap(
             colors=gier_color_list,
@@ -218,6 +225,11 @@ def generate_map_from_csv(subset_full_path: str) -> None:
         yaw_path_fg = folium.FeatureGroup(name="Yaw Rate (from heading)", show=False)
 
         yaw_min, yaw_max = gdf[yaw_rate_col].min(), gdf[yaw_rate_col].max()
+
+        # Ensure color scale is symmetric around zero
+        yaw_abs_max = max(abs(yaw_min), abs(yaw_max))
+        yaw_min, yaw_max = -yaw_abs_max, yaw_abs_max  # Make it symmetric around 0
+
         yaw_norm = colors.Normalize(vmin=yaw_min, vmax=yaw_max)
         yaw_cmap = colormaps.get_cmap("coolwarm")
 
@@ -236,8 +248,8 @@ def generate_map_from_csv(subset_full_path: str) -> None:
 
         yaw_path_fg.add_to(m)
 
-        # Yaw Rate Legend
-        yaw_color_steps = range(int(yaw_min), int(yaw_max) + 1, 1)
+        # Yaw Rate Legend (Centered at Zero)
+        yaw_color_steps = np.linspace(yaw_min, yaw_max, num=100)  # Smooth gradient
         yaw_color_list = [colors.to_hex(yaw_cmap(yaw_norm(v))) for v in yaw_color_steps]
         yaw_colormap = LinearColormap(
             colors=yaw_color_list,

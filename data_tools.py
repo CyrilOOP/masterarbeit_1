@@ -4,6 +4,7 @@ from typing import Dict, Any  # Add this line to fix the error
 
 import numpy as np
 import pandas as pd
+from pykalman import KalmanFilter
 from pyproj import Transformer
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import savgol_filter
@@ -243,7 +244,7 @@ def data_compute_yaw_rate_from_heading(df: pd.DataFrame, config: Dict[str, str])
         ValueError: If required columns are missing.
     """
     # Extract column names from config
-    heading_col = config.get("heading_col", "heading_deg")
+    heading_col = config.get("heading_col_for_yaw_rate_function")
     dt_col = config.get("dt_col", "dt")
 
     # Ensure required columns exist
@@ -261,7 +262,7 @@ def data_compute_yaw_rate_from_heading(df: pd.DataFrame, config: Dict[str, str])
     yaw_rate_deg_s = heading_diff / dt_vals
 
     # 4. Assign to a fixed column name
-    df["yaw_rate_deg_s"] = yaw_rate_deg_s
+    df["yaw_rate_deg_s"] = -yaw_rate_deg_s ###minus sign here!!!
 
     return df
 
@@ -323,5 +324,106 @@ def data_smooth_gps_gaussian(df: pd.DataFrame, config: Dict[str, str]) -> pd.Dat
 
     df[f"{lat_col}_smooth_gaussian"] = gaussian_filter1d(df[lat_col], sigma)
     df[f"{lon_col}_smooth_gaussian"] = gaussian_filter1d(df[lon_col], sigma)
+
+    return df
+
+def data_delete_the_one_percent(df: pd.DataFrame, config: Dict[str, str]):
+    # Get required config values (with defaults, if needed).
+    date_col = config.get("date_column", "DatumZeit")
+    yaw_rate_col = config.get("yaw_rate_column", "yaw_rate_deg_s")
+
+    # Check if required columns exist in df
+    if yaw_rate_col not in df.columns or date_col not in df.columns:
+        raise ValueError(f"The required columns '{yaw_rate_col}' or '{date_col}' "
+                         f"are missing from the CSV file.")
+
+    # Calculate 1% and 99% quantiles for yaw_rate
+    lower_bound = df[yaw_rate_col].quantile(0.01)
+    upper_bound = df[yaw_rate_col].quantile(0.99)
+
+    # Filter rows within the quantile range
+    df = df[(df[yaw_rate_col] >= lower_bound) & (df[yaw_rate_col] <= upper_bound)]
+
+    return df
+
+
+
+def data_compute_heading_from_ds(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataFrame:
+    """
+    Computes the heading (yaw angle) of a train moving along a curved path
+    based on arc-length differentiation.
+
+    Args:
+        df (pd.DataFrame): A DataFrame containing x and y coordinate columns.
+        config (Dict[str, str]): A configuration dictionary containing column names.
+
+    Returns:
+        pd.DataFrame: The input DataFrame with an additional column 'heading_deg_ds'.
+    """
+    # Extract column names from config with defaults
+    x_col = config.get("x_col", "x")
+    y_col = config.get("y_col", "y")
+    heading_col = config.get("heading_col_ds", "heading_deg_ds")
+
+    # Check if required columns exist
+    if x_col not in df.columns or y_col not in df.columns:
+        raise ValueError(f"DataFrame must contain '{x_col}' and '{y_col}' columns.")
+
+    # Compute arc length s (cumulative distance along the path)
+    dx = np.diff(df[x_col])
+    dy = np.diff(df[y_col])
+    ds = np.sqrt(dx**2 + dy**2)  # Distance between consecutive points
+    s = np.concatenate(([0], np.cumsum(ds)))  # Cumulative sum of distances
+
+    # Compute derivatives dx/ds and dy/ds using central differences
+    dx_ds = np.gradient(df[x_col], s)
+    dy_ds = np.gradient(df[y_col], s)
+
+    # Compute heading (yaw angle) using atan2(dy/ds, dx/ds)
+    heading = np.degrees(np.arctan2(dy_ds, dx_ds))
+
+    # Convert negative angles to the [0, 360] range
+    heading = (heading + 360) % 360
+
+    # Store in DataFrame
+    df[heading_col] = heading
+
+    return df
+
+
+def data_kalman_on_yaw_rate(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataFrame:
+    """
+    Apply a Kalman filter to smooth yaw rate values computed from GPS heading.
+
+    Args:
+        df: The DataFrame containing GPS-derived yaw rate.
+        config: Configuration dictionary with column names.
+
+    Returns:
+        The modified DataFrame with an additional column 'yaw_rate_smooth_gps'.
+    """
+    yaw_col = config.get("yaw_col_for_kalman")  # GPS-based yaw rate column
+
+    if yaw_col not in df.columns:
+        raise ValueError(f"Required column '{yaw_col}' not found in DataFrame.")
+
+    # Extract noisy yaw rate from GPS
+    measurements = df[yaw_col].values
+
+    # Kalman Filter Setup (assuming constant yaw rate model)
+    kf = KalmanFilter(
+        initial_state_mean=[measurements[0]],  # Start with first yaw rate value
+        initial_state_covariance=[1],  # Initial uncertainty
+        transition_matrices=[1],  # Yaw rate follows smooth transitions
+        observation_matrices=[1],  # Direct observation model
+        transition_covariance=[0.1],  # Process noise (adjustable)
+        observation_covariance=[2]  # Measurement noise (adjustable)
+    )
+
+    # Apply Kalman filter
+    smoothed_state_means, _ = kf.filter(measurements.reshape(-1, 1))
+
+    # Store smoothed yaw rate in DataFrame
+    df["yaw_rate_kalman"] = smoothed_state_means[:, 0]
 
     return df

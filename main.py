@@ -1,51 +1,81 @@
 import sys
 import os
 from typing import Dict, List, Tuple, Any
+
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QListWidget, QLineEdit, QPushButton, QDoubleSpinBox, QMessageBox, QFileDialog, QCheckBox, QGridLayout
+    QListWidget, QLineEdit, QPushButton, QDoubleSpinBox, QMessageBox, QFileDialog,
+    QCheckBox, QGridLayout, QListWidgetItem
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon
 
-# Import your existing modules
+# Importiere deine bestehenden CSV-/Daten-Funktionen
 from csv_tools import (
-    csv_load, csv_save, csv_group_by_date_and_save, csv_get_statistics,
-    csv_get_files_in_subfolders, subsets_by_date
+    csv_load, csv_save, csv_get_statistics, csv_group_by_date_and_save, subsets_by_date
 )
 from data_tools import (
-    data_convert_to_planar, data_compute_heading_from_xy, parse_time_and_compute_dt,
-    data_filter_points_by_distance, data_compute_yaw_rate_from_heading,
-    data_smooth_gps_savitzky, data_smooth_gps_gaussian
+    data_smooth_gps_savitzky,
+    data_smooth_gps_gaussian,
+    data_convert_to_planar,
+    data_filter_points_by_distance,
+    parse_time_and_compute_dt,
+    data_compute_heading_from_xy,
+    data_compute_yaw_rate_from_heading,
+    data_delete_the_one_percent,
+    data_compute_heading_from_ds,
+    data_kalman_on_yaw_rate
 )
 from map_generator import generate_map_from_csv
 
 
 class DataProcessingApp(QMainWindow):
+    """
+    Das PyQt-basierte GUI-Fenster, das:
+     - Die zu verarbeitenden Teildateien (Subsets) anzeigt und filtern lässt
+     - Processing-Schritte auswählbar macht
+     - Min. Abstandswert (min_distance) erfassen lässt
+    """
     def __init__(self, default_config: Dict[str, bool], subset_folder: str, pre_selected_date: str = None):
         super().__init__()
         self.default_config = default_config
         self.subset_folder = subset_folder
         self.pre_selected_date = pre_selected_date
-        self.selected_steps = {}
-        self.selected_subsets = []
-        self.min_distance = 1.0
-        self.input_file_path = None
-        self.distance_input = None
+
+        # Hier "zwischenspeichern", was im GUI ausgewählt wird
+        self.selected_steps: Dict[str, bool] = {}
+        self.selected_subsets: List[str] = []
+        self.min_distance: float = 1.0
+
+        # Zum Filtern in der GUI
+        self.subset_files: List[str] = []
+        self.current_filter: str = ""
 
         self.init_ui()
+        self.refresh_subsets()
 
     def init_ui(self):
-        """Initialize the user interface."""
+        """Definiert das GUI-Layout und die Widgets."""
         self.setWindowTitle("Data Processing Toolkit")
         self.setWindowState(Qt.WindowMaximized)
         self.setWindowIcon(QIcon("icon.png"))
+        self.setup_style()
 
-        # Apply dark theme
+        main_widget = QWidget()
+        self.setCentralWidget(main_widget)
+        main_layout = QVBoxLayout(main_widget)
+
+        # Baue die GUI-Komponenten auf
+        main_layout.addWidget(self.create_file_selection_group())
+        main_layout.addWidget(self.create_processing_steps_group())
+        main_layout.addWidget(self.create_distance_input_group())
+        main_layout.addWidget(self.create_subsets_group())
+        main_layout.addWidget(self.create_action_button())  # Start Processing
+
+    def setup_style(self):
+        """Setzt ein paar Styles mittels CSS-ähnlicher Syntax."""
         self.setStyleSheet("""
-            QMainWindow {
-                background-color: #2E3440;
-            }
+            QMainWindow { background-color: #2E3440; }
             QLabel {
                 color: #D8DEE9;
                 font-size: 18px;
@@ -60,7 +90,7 @@ class DataProcessingApp(QMainWindow):
                 border-radius: 5px;
                 padding: 5px;
             }
-            QLineEdit {
+            QLineEdit, QDoubleSpinBox {
                 background-color: #3B4252;
                 color: #D8DEE9;
                 border: 1px solid #4C566A;
@@ -75,241 +105,309 @@ class DataProcessingApp(QMainWindow):
                 padding: 10px;
                 font-size: 14px;
             }
-            QPushButton:hover {
-                background-color: #81A1C1;
-            }
-            QPushButton:pressed {
-                background-color: #4C566A;
-            }
-            QDoubleSpinBox {
-                background-color: #3B4252;
-                color: #D8DEE9;
-                border: 1px solid #4C566A;
-                border-radius: 5px;
-                padding: 5px;
-            }
-            QCheckBox {
-                color: #D8DEE9;
-                font-size: 14px;
-            }
+            QPushButton:hover { background-color: #81A1C1; }
+            QPushButton:pressed { background-color: #4C566A; }
+            QCheckBox { color: #D8DEE9; font-size: 14px; }
         """)
 
-        # Main widget and layout
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        main_layout = QVBoxLayout(main_widget)
+    def create_file_selection_group(self) -> QWidget:
+        """Erzeugt den Bereich, in dem man über PyQt eine CSV-Datei auswählen kann,
+           um sie nach Datum zu unterteilen (csv_group_by_date_and_save)."""
+        group = QWidget()
+        layout = QVBoxLayout(group)
 
-        # --- First Function: Create Subsets by Date ---
-        first_function_group = QWidget()
-        first_function_layout = QVBoxLayout(first_function_group)
-        first_function_layout.addWidget(QLabel("Create Subsets by Date"))
+        layout.addWidget(QLabel("Create Subsets by Date"))
+        self.btn_select_file = QPushButton("Select File and Create Subsets")
+        self.btn_select_file.setFont(QFont("Arial", 12))
+        self.btn_select_file.clicked.connect(self.on_select_file)
+        layout.addWidget(self.btn_select_file)
 
-        self.first_function_button = QPushButton("Select File and Create Subsets")
-        self.first_function_button.setFont(QFont("Arial", 12))
-        self.first_function_button.clicked.connect(self.execute_first_function)
-        first_function_layout.addWidget(self.first_function_button)
+        return group
 
-        main_layout.addWidget(first_function_group)
-
-        # --- Processing Steps ---
-        steps_group = QWidget()
-        steps_layout = QGridLayout(steps_group)
-
-        steps_layout.addWidget(QLabel("Processing Steps"), 0, 0, 1, 2)
+    def create_processing_steps_group(self) -> QWidget:
+        """Checkboxen für die verschiedenen Processing-Schritte."""
+        group = QWidget()
+        layout = QGridLayout(group)
+        layout.addWidget(QLabel("Processing Steps"), 0, 0, 1, 2)
 
         self.checkboxes = {}
-        steps = [step for step in list(self.default_config.items()) if step[0] != "create_subsets_by_date"]
+        # Wir filtern hier nur die Steps, die NICHT "create_subsets_by_date" heißen
+        steps = [(k, v) for k, v in self.default_config.items()
+                 if k != "create_subsets_by_date"]
 
+        # Grid: 2 Spalten, so viele Zeilen wie nötig
         num_steps = len(steps)
-        num_rows = (num_steps + 1) // 2
+        num_columns = 2
+        num_rows = (num_steps + num_columns - 1) // num_columns  # Ceiling division
 
-        for index, (step_name, enabled_by_default) in enumerate(steps):
+        for idx, (step_name, enabled) in enumerate(steps):
             checkbox = QCheckBox(step_name.replace("_", " ").title())
-            checkbox.setChecked(enabled_by_default)
+            checkbox.setChecked(enabled)
             self.checkboxes[step_name] = checkbox
 
-            row = index % num_rows + 1
-            col = index // num_rows
-            steps_layout.addWidget(checkbox, row, col)
+            # Reihen und Spalten berechnen
+            row = idx % num_rows + 1  # +1 wegen der Überschriftszeile
+            col = idx // num_rows
+            layout.addWidget(checkbox, row, col)
 
-            if step_name == "statistics":
-                checkbox.stateChanged.connect(self.deselect_other_functions)
+        # "Select All" / "Unselect All" Buttons unter den Checkboxen
+        btn_group = QWidget()
+        btn_layout = QHBoxLayout(btn_group)
+        btn_select_all = QPushButton("Select All")
+        btn_select_all.clicked.connect(lambda: self.toggle_all_steps(True))
+        btn_unselect_all = QPushButton("Unselect All")
+        btn_unselect_all.clicked.connect(lambda: self.toggle_all_steps(False))
 
-        # Control buttons
-        buttons_group = QWidget()
-        buttons_layout = QHBoxLayout(buttons_group)
-        self.select_all_button = QPushButton("Select All")
-        self.select_all_button.clicked.connect(self.select_all_steps)
-        buttons_layout.addWidget(self.select_all_button)
-        self.unselect_all_button = QPushButton("Unselect All")
-        self.unselect_all_button.clicked.connect(self.unselect_all_steps)
-        buttons_layout.addWidget(self.unselect_all_button)
-        steps_layout.addWidget(buttons_group, num_rows + 1, 0, 1, 2)
+        btn_layout.addWidget(btn_select_all)
+        btn_layout.addWidget(btn_unselect_all)
 
-        main_layout.addWidget(steps_group)
+        # Span across both columns
+        layout.addWidget(btn_group, num_rows + 1, 0, 1, 2)
 
-        # --- Minimum Distance Input ---
-        distance_group = QWidget()
-        distance_layout = QHBoxLayout(distance_group)
-        distance_label = QLabel("Minimum Distance (meters):")
+        return group
+
+    def create_distance_input_group(self) -> QWidget:
+        """Spinbox für die Mindestdistanz (min_distance)."""
+        group = QWidget()
+        layout = QHBoxLayout(group)
+        layout.addWidget(QLabel("Minimum Distance (meters):"))
+
         self.distance_input = QDoubleSpinBox()
-        self.distance_input.setMinimum(0.01)
-        self.distance_input.setMaximum(1000.0)
+        self.distance_input.setRange(0.001, 1000.0)
         self.distance_input.setSingleStep(0.1)
         self.distance_input.setValue(self.min_distance)
-        distance_layout.addWidget(distance_label)
-        distance_layout.addWidget(self.distance_input)
-        main_layout.addWidget(distance_group)
+        layout.addWidget(self.distance_input)
 
-        # --- Subsets to Process ---
-        subsets_group = QWidget()
-        subsets_layout = QVBoxLayout(subsets_group)
-        subsets_layout.addWidget(QLabel("Subsets to Process"))
+        return group
 
+    def create_subsets_group(self) -> QWidget:
+        """
+        Dieser Bereich zeigt die vorhandenen Subset-Dateien
+        in der `subsets_by_date`-Struktur an und erlaubt Mehrfachauswahl.
+        """
+        group = QWidget()
+        layout = QVBoxLayout(group)
+        layout.addWidget(QLabel("Subsets to Process"))
+
+        # Suchfeld
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search subsets...")
         self.search_bar.textChanged.connect(self.filter_subsets)
-        subsets_layout.addWidget(self.search_bar)
+        layout.addWidget(self.search_bar)
 
+        # Liste der verfügbaren Dateien
         self.subset_list = QListWidget()
-        self.subset_list.setSelectionMode(QListWidget.MultiSelection)
-        subsets_layout.addWidget(self.subset_list)
+        self.subset_list.setSelectionMode(QListWidget.ExtendedSelection)
+        layout.addWidget(self.subset_list)
 
-        self.refresh_subsets()
-        main_layout.addWidget(subsets_group)
+        return group
 
-        # --- Start Processing Button ---
-        self.start_button = QPushButton("Start Processing")
-        self.start_button.setFont(QFont("Arial", 14, QFont.Bold))
-        self.start_button.setIcon(QIcon("start_icon.png"))
-        self.start_button.clicked.connect(self.on_submit)
-        main_layout.addWidget(self.start_button)
+    def create_action_button(self) -> QWidget:
+        """Button zum Starten des Verarbeitungsprozesses."""
+        group = QWidget()
+        layout = QHBoxLayout(group)
 
-    def select_all_steps(self):
+        self.btn_process = QPushButton("Start Processing")
+        self.btn_process.setFont(QFont("Arial", 14, QFont.Bold))
+        self.btn_process.clicked.connect(self.on_process)
+        layout.addWidget(self.btn_process)
+
+        return group
+
+    def toggle_all_steps(self, state: bool):
+        """Schaltet alle Häkchen an oder aus."""
         for checkbox in self.checkboxes.values():
-            checkbox.setChecked(True)
-
-    def unselect_all_steps(self):
-        for checkbox in self.checkboxes.values():
-            checkbox.setChecked(False)
-
-    def deselect_other_functions(self, state: int):
-        if state == 2:
-            for step_name, checkbox in self.checkboxes.items():
-                if step_name != "statistics":
-                    checkbox.setChecked(False)
+            checkbox.setChecked(state)
 
     def refresh_subsets(self):
+        """
+        Liest die vorhandenen CSV-Dateien in `self.subset_folder`
+        (bspw. `subsets_by_date/YYYY-MM-DD/*.csv`) und zeigt sie in der Liste an.
+        """
         self.subset_files = subsets_by_date(self.subset_folder)
-        self.file_paths = []
         self.subset_list.clear()
-        for relative_path in self.subset_files:
-            relative_path = os.path.relpath(relative_path, self.subset_folder)
-            file_name = os.path.basename(relative_path)
-            self.file_paths.append(relative_path)
-            self.subset_list.addItem(file_name)
-            if self.pre_selected_date and file_name.strip() == self.pre_selected_date.strip():
-                self.subset_list.findItems(file_name, Qt.MatchExactly)[0].setSelected(True)
 
-    def execute_first_function(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Select Input File", "", "CSV Files (*.csv);;All Files (*)"
-        )
-        if file_path:
-            self.input_file_path = file_path
-            df = csv_load(self.input_file_path)
-            if df.empty:
-                QMessageBox.warning(self, "Empty File", "The selected CSV file is empty.")
-                return
+        for full_path in self.subset_files:
+            # Relativen Pfad ermitteln, um den Ordner-Namen in der GUI zu sehen
+            rel_path = os.path.relpath(full_path, self.subset_folder)
+            item = QListWidgetItem(os.path.basename(rel_path))  # Nur der Dateiname
+            item.setData(Qt.UserRole, rel_path)  # Speichere den relativen Pfad
+            self.subset_list.addItem(item)
 
-            csv_group_by_date_and_save(df, self.subset_folder)
-            self.refresh_subsets()
-        else:
-            QMessageBox.warning(self, "No File Selected", "Please select a valid CSV file.")
+        self.filter_subsets()
+        self.select_preselected_date()
 
-    def filter_subsets(self):
-        query = self.search_bar.text().lower()
-        self.subset_list.clear()
-        for relative_path in self.subset_files:
-            file_name = os.path.basename(relative_path)
-            if query in file_name.lower():
-                self.subset_list.addItem(file_name)
-
-    def on_submit(self):
-        self.min_distance = self.distance_input.value()
-        selected_indices = self.subset_list.selectedItems()
-
-        if not selected_indices:
-            QMessageBox.warning(self, "No Subsets Selected", "Please select at least one subset to process.")
+    def select_preselected_date(self):
+        """
+        Falls beim Erstellen dieses Fensters ein `pre_selected_date`
+        gegeben wurde, wird diese in der Liste gesucht und direkt markiert.
+        """
+        if not self.pre_selected_date:
             return
 
-        self.selected_steps = {step_name: checkbox.isChecked() for step_name, checkbox in self.checkboxes.items()}
-        self.selected_subsets = [self.file_paths[self.subset_list.row(item)] for item in selected_indices]
+        for i in range(self.subset_list.count()):
+            item = self.subset_list.item(i)
+            if self.pre_selected_date in item.text():
+                item.setSelected(True)
+                self.subset_list.scrollToItem(item)
+                break
+
+    def filter_subsets(self):
+        """Versteckt alle Einträge, die nicht zum Suchstring passen."""
+        query = self.search_bar.text().lower()
+        self.current_filter = query
+
+        for i in range(self.subset_list.count()):
+            item = self.subset_list.item(i)
+            item.setHidden(query not in item.text().lower())
+
+    def on_select_file(self):
+        """
+        Öffnet ein PyQt-FileDialog, um eine CSV zu wählen und per
+        `csv_group_by_date_and_save()` in dateibasierte Subsets aufzuteilen.
+        """
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Input File",
+            "",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+
+        if not path:
+            QMessageBox.warning(self, "Cancelled", "No file selected")
+            return
+
+        try:
+            # Hier übergeben wir den Pfad an csv_load. => Kein zweites Tk-Fenster.
+            df = csv_load(path)
+            if df.empty:
+                raise ValueError("The chosen CSV file is empty.")
+
+            # Gruppiert und speichert die Splits in "subsets_by_date/<YYYY-MM-DD>"
+            # Standardmäßig wird der Name "DatumZeit" genutzt (siehe csv_tools.py).
+            csv_group_by_date_and_save(df, self.subset_folder)
+
+            # Liste im GUI aktualisieren
+            self.refresh_subsets()
+            QMessageBox.information(self, "Success", "Subsets created successfully!")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to process file:\n{str(e)}")
+
+    def on_process(self):
+        """
+        Liest die eingestellten Optionen aus und schließt das Fenster,
+        damit im Hauptteil (unten) weitergemacht werden kann.
+        """
+        self.min_distance = self.distance_input.value()
+        selected_items = self.subset_list.selectedItems()
+
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select at least one subset!")
+            return
+
+        # Welche Steps wurden angehakt?
+        self.selected_steps = {
+            name: cb.isChecked()
+            for name, cb in self.checkboxes.items()
+        }
+
+        # Baue die vollständigen Pfade (absolut) aus den relativen Pfaden
+        self.selected_subsets = [
+            os.path.join(self.subset_folder, item.data(Qt.UserRole))
+            for item in selected_items
+        ]
+
+        # Fensterschluss
         self.close()
 
     def get_results(self) -> Tuple[Dict[str, bool], List[str], float]:
+        """
+        Gibt nach dem GUI-Lauf:
+         - das Dictionary mit den Schritten,
+         - die Liste der ausgewählten Subset-Pfade,
+         - die eingegebene Mindestdistanz
+        zurück.
+        """
         return self.selected_steps, self.selected_subsets, self.min_distance
 
 
-def select_steps_and_subsets_with_gui(
-        default_config: Dict[str, bool],
-        subset_folder: str,
-        pre_selected_date: str = None
-) -> Tuple[Dict[str, bool], List[str], float]:
-    app = QApplication(sys.argv)
-    window = DataProcessingApp(default_config, subset_folder, pre_selected_date)
-    window.show()
-    app.exec_()
-    return window.get_results()
-
-
 def main(config: Dict[str, Any], subsets: List[str]) -> None:
-    for subset_file in subsets:
-        subset_full_path = os.path.join(config["output_folder_for_subsets_by_date"], subset_file)
+    """
+    Main Processing Pipeline.
+    Geht alle ausgewählten Subsets durch, lädt sie und führt die angehakten
+    Verarbeitungsschritte durch. Abschließend wird gespeichert.
+    """
+    for subset_path in subsets:
+        try:
+            if not os.path.exists(subset_path):
+                raise FileNotFoundError(f"Subset not found: {subset_path}")
 
-        if not os.path.exists(subset_full_path):
-            print(f"File not found: {subset_full_path}")
+            # Lade das CSV
+            df = csv_load(subset_path, config)
+            if df.empty:
+                print(f"Skipping empty subset: {subset_path}")
+                continue
+
+            # Mapping der möglichen Schritte (Name im config -> (Funktion, suffix))
+            processing_steps = [
+                ("smooth_gps_data_savitzky",  data_smooth_gps_savitzky,   "savitzky"),
+                ("smooth_gps_data_gaussian",  data_smooth_gps_gaussian,   "gaussian"),
+                ("convert_to_planar",         data_convert_to_planar,     "planar"),
+                ("filter_with_distances",     data_filter_points_by_distance, "dist"),
+                ("parse_time",                parse_time_and_compute_dt,   "time"),
+                ("compute_heading_from_xy",   data_compute_heading_from_xy,"heading"),
+                ("compute_heading_from_ds",   data_compute_heading_from_ds, "headingDS" ),
+                ("compute_yaw_rate_from_heading", data_compute_yaw_rate_from_heading, "yawRate"),
+                ("use_kalman_on_yaw_rate", data_kalman_on_yaw_rate, "kalman"),
+                ("delete_the_one_percent",     data_delete_the_one_percent, "1percent"),
+            ]
+
+            processed_suffixes = []
+            # Nacheinander die aktivierten Schritte ausführen
+            for step_name, step_func, suffix in processing_steps:
+                if config.get(step_name, False):
+                    df = step_func(df, config)  # ggf. config hier übergeben
+                    processed_suffixes.append(suffix)
+
+            # Datei speichern, falls gewünscht
+            if config.get("save_to_csv", False):
+                base_name = os.path.splitext(os.path.basename(subset_path))[0]
+                # z. B. "2020-01-01.csv" -> "2020-01-01_savitzky_gaussian.csv"
+                # Suffixe, die die aktivierten Steps widerspiegeln
+                new_name = f"{base_name}_{'_'.join(processed_suffixes)}.csv"
+
+                # In dasselbe Verzeichnis wie subset_path ablegen
+                save_dir = os.path.dirname(subset_path)
+                save_path = os.path.join(save_dir, new_name)
+
+                # csv_save ruft, wenn enable_statistics_on_save=True, intern csv_get_statistics() auf
+                csv_save(df, save_path, config)
+
+            # Falls wir hier oder an anderer Stelle *zusätzlich* `statistics` wollen,
+            # können wir das wahlweise direkt auf dem Original- oder dem neu erzeugten File machen.
+            if config.get("statistics", False):
+                # Hier generieren wir z. B. die Statistik basierend auf der NEUEN Datei,
+                # sofern du sie abgespeichert hast.
+                # Oder eben subset_path, falls du die Statistik vom Original willst.
+                # Beispiel:
+                final_file = save_path if config.get("save_to_csv", False) else subset_path
+                csv_get_statistics(final_file, config)
+
+            # Karte generieren?
+            if config.get("generate_map", False):
+                # Ebenfalls entscheiden, ob auf Basis des neu erzeugten oder des alten Files
+                final_file = save_path if config.get("save_to_csv", False) else subset_path
+                generate_map_from_csv(final_file)
+
+        except Exception as e:
+            print(f"Error processing {subset_path}: {str(e)}")
             continue
-
-        df_subset = csv_load(subset_full_path)
-        processed_suffixes = []
-
-        if df_subset.empty:
-            print(f"Subset '{subset_file}' is empty. Skipping.")
-            continue
-
-        steps = [
-            ("smooth_gps_data_savitzky", data_smooth_gps_savitzky, "savitzky"),
-            ("smooth_gps_data_gaussian", data_smooth_gps_gaussian, "gaussian"),
-            ("convert_to_planar", data_convert_to_planar, "planar"),
-            ("filter_with_distances", data_filter_points_by_distance, "dist"),
-            ("parse_time", parse_time_and_compute_dt, "time"),
-            ("compute_heading_from_xy", data_compute_heading_from_xy, "heading"),
-            ("compute_yaw_rate_from_heading", data_compute_yaw_rate_from_heading, "yaw_rate"),
-        ]
-
-        for step_name, step_function, suffix in steps:
-            if config.get(step_name, True):
-                df_subset = step_function(df_subset, config)
-                processed_suffixes.append(suffix)
-
-        if config.get("save_to_csv", True):
-            suffix_string = "_".join(processed_suffixes)
-            base_filename = os.path.splitext(subset_file)[0]
-            processed_filename = f"{base_filename}_{suffix_string}.csv"
-            save_path = os.path.join(config["output_folder_for_subsets_by_date"], processed_filename)
-            csv_save(df_subset, save_path, config)
-
-        if config.get("statistics", False):
-            csv_get_statistics(subset_full_path, config)
-
-        if config.get("generate_map", False):
-            map_source_path = save_path if config.get("save_to_csv", True) else subset_full_path
-            generate_map_from_csv(map_source_path)
 
 
 if __name__ == "__main__":
-    default_config = {
+    # Voreinstellungen
+    DEFAULT_CONFIG = {
         "statistics": False,
         "smooth_gps_data_savitzky": True,
         "smooth_gps_data_gaussian": True,
@@ -317,21 +415,29 @@ if __name__ == "__main__":
         "filter_with_distances": True,
         "parse_time": True,
         "compute_heading_from_xy": True,
+        "compute_heading_from_ds" : True,
         "compute_yaw_rate_from_heading": True,
+        "use_kalman_on_yaw_rate": True,
+        "delete_the_one_percent" : True,
         "save_to_csv": True,
-        "enable_statistics_on_save": True,
+        "enable_statistics_on_save": True,  # bedeutet: csv_save ruft csv_get_statistics automatisch auf
         "generate_map": False,
     }
 
-    subset_folder = "subsets_by_date"
-    pre_selected_date = None
+    app = QApplication(sys.argv)
+    window = DataProcessingApp(DEFAULT_CONFIG, "subsets_by_date")
+    window.show()
+    app.exec_()
 
-    selected_steps, selected_subsets, min_distance = select_steps_and_subsets_with_gui(
-        default_config, subset_folder, pre_selected_date
-    )
+    # Hole die vom Nutzer getroffene Auswahl
+    selected_steps, selected_subsets, min_distance = window.get_results()
 
-    config = {
-        "output_folder_for_subsets_by_date": subset_folder,
+    # Baue das finale Config-Dict
+    CONFIG = {
+        # Mögliche globale Einstellungen
+        "output_folder_for_subsets_by_date": "subsets_by_date",
+        "column_name": "DatumZeit",  # Wenn du eine Spalte fürs Gruppieren benötigst
+        "encoding": "utf-8",
         "date_column": "DatumZeit",
         "speed_column": "Geschwindigkeit in m/s",
         "lat_col": "GPS_lat",
@@ -342,8 +448,12 @@ if __name__ == "__main__":
         "lon_col_smooth": "GPS_lon_smooth",
         "distance_col": "distance",
         "time_between_points": "dt",
+        "heading_col_for_yaw_rate_function": "heading_deg_ds",
+        "yaw_col_for_kalman" : "yaw_rate_deg_s",
         "min_distance": min_distance,
+        # Steps aus dem GUI
         **selected_steps
     }
 
-    main(config, selected_subsets)
+    # Starte die Verarbeitung
+    main(CONFIG, selected_subsets)
