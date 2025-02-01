@@ -24,7 +24,7 @@ from data_tools import (
     data_compute_yaw_rate_from_heading,
     data_delete_the_one_percent,
     data_compute_heading_from_ds,
-    data_kalman_on_yaw_rate
+    data_kalman_on_yaw_rate, data_particle_filter
 )
 from map_generator import generate_map_from_csv
 
@@ -353,6 +353,7 @@ def main(config: Dict[str, Any], subsets: List[str]) -> None:
             processing_steps = [
                 ("smooth_gps_data_savitzky",  data_smooth_gps_savitzky,   "savitzky"),
                 ("smooth_gps_data_gaussian",  data_smooth_gps_gaussian,   "gaussian"),
+                ("smooth_gps_particule_filter", data_particle_filter, "particule"),
                 ("convert_to_planar",         data_convert_to_planar,     "planar"),
                 ("filter_with_distances",     data_filter_points_by_distance, "dist"),
                 ("parse_time",                parse_time_and_compute_dt,   "time"),
@@ -411,6 +412,7 @@ if __name__ == "__main__":
         "statistics": False,
         "smooth_gps_data_savitzky": True,
         "smooth_gps_data_gaussian": True,
+        "smooth_gps_particule_filter" : True,
         "convert_to_planar": True,
         "filter_with_distances": True,
         "parse_time": True,
@@ -440,6 +442,7 @@ if __name__ == "__main__":
         "encoding": "utf-8",
         "date_column": "DatumZeit",
         "speed_column": "Geschwindigkeit in m/s",
+        "acc_col_for_particule_filter" : "Beschleunigung in m/s2",
         "lat_col": "GPS_lat",
         "lon_col": "GPS_lon",
         "x_col": "x",
@@ -450,7 +453,7 @@ if __name__ == "__main__":
         "time_between_points": "dt",
         "heading_col_for_yaw_rate_function": "heading_deg_ds",
         "yaw_col_for_kalman" : "yaw_rate_deg_s",
-        "GPS_col_for_convert_to_planar" : ""
+        "N_for_particule_filter" : 1000,
         "min_distance": min_distance,
         # Steps aus dem GUI
         **selected_steps

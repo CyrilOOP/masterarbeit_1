@@ -18,7 +18,7 @@ time = df["time_seconds"].values
 
 
 # Particle Filter Function
-def particle_filter(data, N=1000):
+def particle_filter(df, N=1000):
     particles = np.random.normal(data[0], 1, size=N)
     weights = np.ones(N) / N
     filtered = []
@@ -34,12 +34,11 @@ def particle_filter(data, N=1000):
 
     return np.array(filtered)
 
+    return df
 
-# Apply particle filter to latitude and longitude separately
-df["GPS_lat_filtered"] = particle_filter(gps_lat)
-df["GPS_lon_filtered"] = particle_filter(gps_lon)
 
-# Save the results to a new CSV file
-df.to_csv("gps_data_filtered.csv", index=False, sep=",")
 
-print("Filtered GPS data saved as 'gps_data_filtered.csv'.")
+
+
+
+

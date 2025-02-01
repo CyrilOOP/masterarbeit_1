@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from pykalman import KalmanFilter
 from pyproj import Transformer
+from filterpy.monte_carlo import systematic_resample
 from scipy.ndimage import gaussian_filter1d
 from scipy.signal import savgol_filter
 
@@ -267,65 +268,235 @@ def data_compute_yaw_rate_from_heading(df: pd.DataFrame, config: Dict[str, str])
     return df
 
 
-def data_smooth_gps_savitzky(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataFrame:
+import pandas as pd
+from typing import Dict, Optional, Tuple
+from scipy.signal import savgol_filter
+x
+
+
+def data_smooth_gps_savitzky(df: pd.DataFrame, smoothing_params: Optional[Dict[str, int]] = None) -> pd.DataFrame:
     """
-    Smooth the GPS latitude and longitude data using a Savitzky-Golay filter.
+    Check for available GPS data (raw or preprocessed) and ask the user which to use
+    for applying a Savitzky–Golay filter. The chosen data is then smoothed, and the results
+    are stored in new columns:
+      'GPS_lat_smoothed_savitzky' and 'GPS_lon_smoothed_savitzky'.
 
     Args:
-        df: The input DataFrame with GPS data.
-        config: Configuration dictionary containing column names and settings.
+        df: DataFrame containing GPS data. Expected to have either:
+              - Raw data: 'GPS_lat' and 'GPS_lon'
+              - Or preprocessed data with names like 'GPS_lat_smoothed_<method>' and 'GPS_lon_smoothed_<method>'
+        smoothing_params: Optional dict to override default smoothing parameters
+                          (default: {"window_length": 51, "polyorder": 2})
 
     Returns:
-        Updated DataFrame with smoothed GPS latitude and longitude columns.
-
-    Raises:
-        KeyError: If required columns are missing in the config.
+        The DataFrame with new smoothed columns.
     """
-    # Ensure the required keys are in the config
-    if "lat_col" not in config or "lon_col" not in config:
-        raise KeyError("Configuration must include 'lat_col' and 'lon_col'.")
 
-    lat_col = config["lat_col"]
-    lon_col = config["lon_col"]
+    # Inner helper function for GUI selection.
+    def choose_from_options(title: str, prompt: str, options: list) -> str:
+        selected_value = {"value": None}
 
-    # S-G filter parameters (adjust as needed)
-    window_length = 51  # must be odd
-    polyorder = 2
+        def on_ok():
+            selected = combobox.get()
+            if selected not in options:
+                messagebox.showerror("Invalid Selection", "Please select a valid option.")
+                return
+            selected_value["value"] = selected
+            dialog.destroy()
 
-    df[f"{lat_col}_smooth_savitzky"] = savgol_filter(df[lat_col], window_length, polyorder)
-    df[f"{lon_col}_smooth_savitzky"] = savgol_filter(df[lon_col], window_length, polyorder)
+        dialog = tk.Tk()
+        dialog.title(title)
+        dialog.resizable(False, False)
 
+        # Center the window on the screen.
+        dialog.update_idletasks()
+        width = 350
+        height = 150
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+
+        # Prompt label.
+        label = tk.Label(dialog, text=prompt)
+        label.pack(pady=(20, 10))
+
+        # Combobox for options.
+        combobox = ttk.Combobox(dialog, values=options, state="readonly", width=30)
+        combobox.pack(pady=5)
+        combobox.current(0)  # default selection
+
+        # OK button.
+        ok_button = tk.Button(dialog, text="OK", command=on_ok)
+        ok_button.pack(pady=(10, 20))
+
+        dialog.mainloop()
+
+        if selected_value["value"] is None:
+            raise ValueError("No selection was made.")
+        return selected_value["value"]
+
+    # Build a dictionary of candidate input pairs.
+    # Key: label for display; Value: tuple (lat_column, lon_column)
+    candidates: Dict[str, Tuple[str, str]] = {}
+
+    # Check for raw data.
+    if "GPS_lat" in df.columns and "GPS_lon" in df.columns:
+        candidates["raw (GPS_lat, GPS_lon)"] = ("GPS_lat", "GPS_lon")
+
+    # Check for preprocessed columns.
+    for col in df.columns:
+        prefix = "GPS_lat_smoothed_"
+        if col.startswith(prefix):
+            method = col[len(prefix):]
+            lon_col = f"GPS_lon_smoothed_{method}"
+            if lon_col in df.columns:
+                label = f"preprocessed ({method})"
+                candidates[label] = (col, lon_col)
+
+    if not candidates:
+        raise KeyError("No valid GPS data found. Expected raw columns ('GPS_lat', 'GPS_lon') or preprocessed columns "
+                       "with the pattern 'GPS_lat_smoothed_<method>' and 'GPS_lon_smoothed_<method>'.")
+
+    # Create a list of options for the user.
+    options = list(candidates.keys())
+
+    # Ask the user to choose the input data.
+    chosen_label = choose_from_options("Select GPS Data for Smoothing with Savitzky-Golay",
+                                       "Select the GPS data to use as input for Savitzky-Golay:",
+                                       options)
+    lat_input, lon_input = candidates[chosen_label]
+    print(f"Using input columns: {lat_input} and {lon_input}")
+
+    # Use default smoothing parameters if not provided.
+    params = {"window_length": 51, "polyorder": 2}
+    if smoothing_params:
+        params.update(smoothing_params)
+
+    # Check that there is enough data for the chosen window_length.
+    if len(df[lat_input]) < params["window_length"]:
+        raise ValueError(f"Data length in {lat_input} is less than window_length ({params['window_length']}).")
+
+    # Apply the Savitzky–Golay filter.
+    df["GPS_lat_smoothed_savitzky"] = savgol_filter(df[lat_input], params["window_length"], params["polyorder"])
+    df["GPS_lon_smoothed_savitzky"] = savgol_filter(df[lon_input], params["window_length"], params["polyorder"])
+
+    print("Savitzky–Golay smoothing applied and saved as 'GPS_lat_smoothed_savitzky' and 'GPS_lon_smoothed_savitzky'.")
     return df
 
 
-def data_smooth_gps_gaussian(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataFrame:
+import pandas as pd
+from typing import Dict, Optional, Tuple
+from scipy.ndimage import gaussian_filter1d
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+
+def data_smooth_gps_gaussian(df: pd.DataFrame, gaussian_params: Optional[Dict[str, float]] = None) -> pd.DataFrame:
     """
-    Smooth the GPS latitude and longitude data using a Gaussian filter.
+    Check for available GPS data (raw or preprocessed) and ask the user which to use
+    for applying a Gaussian filter. The chosen data is then smoothed using the Gaussian filter,
+    and the results are stored in new columns:
+      'GPS_lat_smooth_gaussian' and 'GPS_lon_smooth_gaussian'.
 
     Args:
-        df: The input DataFrame with GPS data.
-        config: Configuration dictionary containing column names and settings.
+        df: DataFrame containing GPS data. Expected to have either:
+              - Raw data: 'GPS_lat' and 'GPS_lon'
+              - Or preprocessed data with names like 'GPS_lat_smoothed_<method>' and 'GPS_lon_smoothed_<method>'
+        gaussian_params: Optional dict to override default Gaussian parameters
+                         (default: {"sigma": 2})
 
     Returns:
-        Updated DataFrame with smoothed GPS latitude and longitude columns.
-
-    Raises:
-        KeyError: If required columns are missing in the config.
+        The DataFrame with new smoothed columns.
     """
-    # Ensure the required keys are in the config
-    if "lat_col" not in config or "lon_col" not in config:
-        raise KeyError("Configuration must include 'lat_col' and 'lon_col'.")
 
-    lat_col = config["lat_col"]
-    lon_col = config["lon_col"]
+    # Inner helper function to display a GUI for option selection.
+    def choose_from_options(title: str, prompt: str, options: list) -> str:
+        selected_value = {"value": None}
 
-    # Gaussian filter parameter (standard deviation)
-    sigma = 2
+        def on_ok():
+            selected = combobox.get()
+            if selected not in options:
+                messagebox.showerror("Invalid Selection", "Please select a valid option.")
+                return
+            selected_value["value"] = selected
+            dialog.destroy()
 
-    df[f"{lat_col}_smooth_gaussian"] = gaussian_filter1d(df[lat_col], sigma)
-    df[f"{lon_col}_smooth_gaussian"] = gaussian_filter1d(df[lon_col], sigma)
+        dialog = tk.Tk()
+        dialog.title(title)
+        dialog.resizable(False, False)
 
+        # Center the window on the screen.
+        dialog.update_idletasks()
+        width = 350
+        height = 150
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+
+        # Prompt label.
+        label = tk.Label(dialog, text=prompt)
+        label.pack(pady=(20, 10))
+
+        # Combobox for options.
+        combobox = ttk.Combobox(dialog, values=options, state="readonly", width=30)
+        combobox.pack(pady=5)
+        combobox.current(0)  # default selection
+
+        # OK button.
+        ok_button = tk.Button(dialog, text="OK", command=on_ok)
+        ok_button.pack(pady=(10, 20))
+
+        dialog.mainloop()
+
+        if selected_value["value"] is None:
+            raise ValueError("No selection was made.")
+        return selected_value["value"]
+
+    # Build a dictionary of candidate input pairs.
+    # Key: label for display; Value: tuple (latitude_column, longitude_column)
+    candidates: Dict[str, Tuple[str, str]] = {}
+
+    # Check for raw data.
+    if "GPS_lat" in df.columns and "GPS_lon" in df.columns:
+        candidates["raw (GPS_lat, GPS_lon)"] = ("GPS_lat", "GPS_lon")
+
+    # Check for preprocessed columns.
+    for col in df.columns:
+        prefix = "GPS_lat_smoothed_"
+        if col.startswith(prefix):
+            method = col[len(prefix):]
+            lon_col = f"GPS_lon_smoothed_{method}"
+            if lon_col in df.columns:
+                label = f"preprocessed ({method})"
+                candidates[label] = (col, lon_col)
+
+    if not candidates:
+        raise KeyError("No valid GPS data found. Expected raw columns ('GPS_lat', 'GPS_lon') or preprocessed columns "
+                       "with the pattern 'GPS_lat_smoothed_<method>' and 'GPS_lon_smoothed_<method>'.")
+
+    # Create a list of options for the user.
+    options = list(candidates.keys())
+
+    # Ask the user to choose the input data.
+    chosen_label = choose_from_options("Select GPS Data for Gaussian Smoothing",
+                                       "Select the GPS data to use as input for Gaussian Smoothing:",
+                                       options)
+    lat_input, lon_input = candidates[chosen_label]
+    print(f"Using input columns: {lat_input} and {lon_input}")
+
+    # Use default Gaussian parameters if not provided.
+    params = {"sigma": 2}
+    if gaussian_params:
+        params.update(gaussian_params)
+
+    # Apply the Gaussian filter.
+    df["GPS_lat_smoothed_gaussian"] = gaussian_filter1d(df[lat_input], sigma=params["sigma"])
+    df["GPS_lon_smoothed_gaussian"] = gaussian_filter1d(df[lon_input], sigma=params["sigma"])
+
+    print("Gaussian smoothing applied and saved as 'GPS_lat_smooth_gaussian' and 'GPS_lon_smooth_gaussian'.")
     return df
+
+
 
 def data_delete_the_one_percent(df: pd.DataFrame, config: Dict[str, str]):
     # Get required config values (with defaults, if needed).
@@ -427,3 +598,218 @@ def data_kalman_on_yaw_rate(df: pd.DataFrame, config: Dict[str, str]) -> pd.Data
     df["yaw_rate_kalman"] = smoothed_state_means[:, 0]
 
     return df
+
+
+
+def data_particle_filter(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataFrame:
+    """
+    Apply a particle filter using GPS data (latitude and longitude) along with speed and acceleration.
+    This function searches for candidate GPS columns in the DataFrame. It considers:
+      - Raw data: 'GPS_lat' and 'GPS_lon'
+      - Preprocessed data: any pair of columns matching
+            'GPS_lat_smoothed_<method>' and 'GPS_lon_smoothed_<method>'
+    A simple GUI is presented (if multiple candidates exist) to let the user choose which GPS data to use.
+
+    The state vector at each time step is:
+         [latitude, longitude, speed, acceleration]
+    Speed and acceleration column names are taken from config (defaults are "speed" and "acceleration").
+
+    The function returns the original DataFrame with four additional columns:
+         "pf_lat", "pf_lon", "pf_speed", "pf_acc"
+    containing the filtered state estimates.
+
+    The config dictionary may include:
+       - For GPS:
+         * (No explicit keys needed; the function searches for raw or preprocessed GPS columns.)
+       - For speed and acceleration:
+         * "speed_col": Name of the speed column (default "speed")
+         * "acc_col": Name of the acceleration column (default "acceleration")
+       - "N_for_particule_filter": Number of particles (default 100)
+       - Process noise standard deviations:
+         * "process_std_lat" (default 0.0001)
+         * "process_std_lon" (default 0.0001)
+         * "process_std_speed" (default 0.1)
+         * "process_std_acc" (default 0.1)
+       - Measurement noise standard deviations:
+         * "measurement_std_lat" (default 0.0001)
+         * "measurement_std_lon" (default 0.0001)
+         * "measurement_std_speed" (default 0.1)
+         * "measurement_std_acc" (default 0.1)
+    """
+
+    # --- Helper: GUI for selecting among candidate options ---
+    def choose_from_options(title: str, prompt: str, options: list) -> str:
+        selected_value = {"value": None}
+
+        def on_ok():
+            selected = combobox.get()
+            if selected not in options:
+                messagebox.showerror("Invalid Selection", "Please select a valid option.")
+                return
+            selected_value["value"] = selected
+            dialog.destroy()
+
+        dialog = tk.Tk()
+        dialog.title(title)
+        dialog.resizable(False, False)
+
+        # Center the window on the screen.
+        dialog.update_idletasks()
+        width = 350
+        height = 150
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f"{width}x{height}+{x}+{y}")
+
+        # Prompt label.
+        label = tk.Label(dialog, text=prompt)
+        label.pack(pady=(20, 10))
+
+        # Combobox for options.
+        combobox = ttk.Combobox(dialog, values=options, state="readonly", width=30)
+        combobox.pack(pady=5)
+        combobox.current(0)  # default selection
+
+        # OK button.
+        ok_button = tk.Button(dialog, text="OK", command=on_ok)
+        ok_button.pack(pady=(10, 20))
+
+        dialog.mainloop()
+
+        if selected_value["value"] is None:
+            raise ValueError("No selection was made.")
+        return selected_value["value"]
+
+    # --- End Helper ---
+
+    # --- Determine which GPS columns to use ---
+    # Build a dictionary of candidate input pairs:
+    # Key: Display label; Value: (lat_column, lon_column)
+    gps_candidates = {}
+
+    # Raw GPS columns:
+    if "GPS_lat" in df.columns and "GPS_lon" in df.columns:
+        gps_candidates["raw (GPS_lat, GPS_lon)"] = ("GPS_lat", "GPS_lon")
+
+    # Look for preprocessed versions (columns with suffixes):
+    for col in df.columns:
+        prefix = "GPS_lat_smoothed_"
+        if col.startswith(prefix):
+            method = col[len(prefix):]
+            lon_candidate = f"GPS_lon_smoothed_{method}"
+            if lon_candidate in df.columns:
+                gps_candidates[f"preprocessed ({method})"] = (col, lon_candidate)
+
+    if not gps_candidates:
+        raise KeyError("No valid GPS data columns found. Expect raw 'GPS_lat'/'GPS_lon' or preprocessed "
+                       "versions with pattern 'GPS_lat_smoothed_<method>' and 'GPS_lon_smoothed_<method>'.")
+
+    # If more than one candidate exists, ask the user which one to use.
+    options = list(gps_candidates.keys())
+    if len(options) > 1:
+        chosen_label = choose_from_options("Select GPS Data for Particle Filter",
+                                           "Select the GPS data to use as input (latitude and longitude):",
+                                           options)
+    else:
+        chosen_label = options[0]
+    gps_lat_col, gps_lon_col = gps_candidates[chosen_label]
+    print(f"Using GPS columns: {gps_lat_col} and {gps_lon_col}")
+
+    # --- Get speed and acceleration column names from config (with defaults) ---
+    speed_col = config.get("speed_column")
+    acc_col = config.get("acc_col_for_particule_filter")
+    for col in [speed_col, acc_col]:
+        if col not in df.columns:
+            raise KeyError(f"Column '{col}' not found in the DataFrame.")
+
+    # --- Particle filter parameters ---
+    N = int(config.get("N_for_particule_filter"))
+
+    # Process noise standard deviations (for each state dimension)
+    process_std = np.array([
+        float(config.get("process_std_lat", 0.0001)),
+        float(config.get("process_std_lon", 0.0001)),
+        float(config.get("process_std_speed", 0.1)),
+        float(config.get("process_std_acc", 0.1))
+    ])
+
+    # Measurement noise standard deviations
+    measurement_std = np.array([
+        float(config.get("measurement_std_lat", 0.0001)),
+        float(config.get("measurement_std_lon", 0.0001)),
+        float(config.get("measurement_std_speed", 0.1)),
+        float(config.get("measurement_std_acc", 0.1))
+    ])
+
+    # --- Build the observation matrix ---
+    # Each observation row: [lat, lon, speed, acceleration]
+    observations = df[[gps_lat_col, gps_lon_col, speed_col, acc_col]].values
+    T = observations.shape[0]
+    d = 4  # state dimension
+
+    # --- Initialize particles ---
+    init_obs = observations[0]
+    # Set an initial covariance (scaled from measurement noise)
+    init_cov = np.diag((measurement_std ** 2) * 10)
+    try:
+        particles = np.random.multivariate_normal(mean=init_obs, cov=init_cov, size=N)
+    except np.linalg.LinAlgError:
+        # Fallback in case the covariance is not positive definite.
+        particles = np.random.multivariate_normal(mean=init_obs, cov=np.eye(d) * 1e-6, size=N)
+
+    weights = np.ones(N) / N  # uniform initial weights
+
+    # --- Helper: Systematic resampling ---
+    def systematic_resample(weights):
+        Np = len(weights)
+        positions = (np.arange(Np) + np.random.uniform()) / Np
+        indexes = np.zeros(Np, dtype=int)
+        cumulative_sum = np.cumsum(weights)
+        i, j = 0, 0
+        while i < Np:
+            if positions[i] < cumulative_sum[j]:
+                indexes[i] = j
+                i += 1
+            else:
+                j += 1
+        return indexes
+
+    # --- End Helper ---
+
+    # --- Particle Filter Loop ---
+    filtered_states = []
+    for z in observations:
+        # Prediction: propagate particles with Gaussian process noise.
+        noise = np.random.normal(0, process_std, size=(N, d))
+        particles = particles + noise
+
+        # Update: compute likelihood for each particle given measurement z.
+        diff = particles - z  # shape (N, d)
+        # Calculate squared error normalized by measurement noise.
+        squared_error = np.sum((diff / measurement_std) ** 2, axis=1)
+        likelihood = np.exp(-0.5 * squared_error)
+
+        # Update weights.
+        weights *= likelihood
+        weights += 1.e-300  # avoid numerical underflow
+        weights /= np.sum(weights)
+
+        # Resample particles.
+        indexes = systematic_resample(weights)
+        particles = particles[indexes]
+        weights = np.ones(N) / N  # reset weights after resampling
+
+        # Estimate: compute the mean state from the particles.
+        mean_state = np.mean(particles, axis=0)
+        filtered_states.append(mean_state)
+
+    filtered_states = np.array(filtered_states)  # shape (T, 4)
+
+    # --- Append filtered state estimates as new columns in the DataFrame ---
+    df["pf_lat"] = filtered_states[:, 0]
+    df["pf_lon"] = filtered_states[:, 1]
+    df["pf_speed"] = filtered_states[:, 2]
+    df["pf_acc"] = filtered_states[:, 3]
+
+    return df
+
