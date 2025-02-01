@@ -359,8 +359,8 @@ def main(config: Dict[str, Any], subsets: List[str]) -> None:
                 ("compute_heading_from_xy",   data_compute_heading_from_xy,"heading"),
                 ("compute_heading_from_ds",   data_compute_heading_from_ds, "headingDS" ),
                 ("compute_yaw_rate_from_heading", data_compute_yaw_rate_from_heading, "yawRate"),
-                ("use_kalman_on_yaw_rate", data_kalman_on_yaw_rate, "kalman"),
-                ("delete_the_one_percent",     data_delete_the_one_percent, "1percent"),
+                ("use_kalman_on_yaw_rate",    data_kalman_on_yaw_rate, "kalman"),
+                ("delete_the_one_percent",    data_delete_the_one_percent, "1percent"),
             ]
 
             processed_suffixes = []
@@ -450,6 +450,7 @@ if __name__ == "__main__":
         "time_between_points": "dt",
         "heading_col_for_yaw_rate_function": "heading_deg_ds",
         "yaw_col_for_kalman" : "yaw_rate_deg_s",
+        "GPS_col_for_convert_to_planar" : ""
         "min_distance": min_distance,
         # Steps aus dem GUI
         **selected_steps
