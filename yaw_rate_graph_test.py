@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Load the CSV file
-file_path = "subsets_by_date/2024-04-01/filtered_gps_data_savitzky_planar_dist_headingDS_yawRate_1percent.csv"  # Replace with your file path
+file_path = "subsets_by_date/2024-05-07/2024-05-07_savitzky_gaussian_particule_planar_time_headingDS_yawRate_1percent.csv"  # Replace with your file path
 
 # Read the CSV into a DataFrame, parsing the DatumZeit column as datetime
 data = pd.read_csv(file_path, parse_dates=["DatumZeit"], dayfirst=True)

@@ -1,8 +1,8 @@
 import pandas as pd
 import os
-from typing import List, Optional, Dict, Any
-from tkinter import Tk, filedialog
-
+from typing import List, Optional, Dict, Any, Tuple
+from tkinter import Tk, filedialog, messagebox, ttk
+import tkinter as tk
 
 def csv_load(file_path: Optional[str] = None, config: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
     """
@@ -265,3 +265,103 @@ def subsets_by_date(folder_path: str, config: Optional[Dict[str, Any]] = None) -
             if file.endswith(file_extension):
                 file_paths.append(os.path.join(root, file))
     return file_paths
+
+
+# ============================================================================
+# Helper: Select GPS Columns (raw or preprocessed) via GUI
+# ============================================================================
+def csv_select_gps_columns(df: pd.DataFrame,
+                       title: str = "Select GPS Data",
+                       prompt: str = "Select the GPS data to use (latitude and longitude):"
+                       ) -> Tuple[str, str]:
+    """
+    Search the DataFrame for candidate GPS column pairs and return the selected pair.
+    It considers:
+      - Raw data: 'GPS_lat' and 'GPS_lon'
+      - Preprocessed data: any pair with names matching
+          'GPS_lat_smoothed_<method>' and 'GPS_lon_smoothed_<method>'
+
+    If more than one candidate exists, a simple GUI dialog is shown.
+
+    Returns:
+        A tuple (lat_column, lon_column) chosen by the user.
+
+    Raises:
+        KeyError: If no valid candidate pair is found.
+    """
+    # Build a dictionary of candidate pairs.
+    # Key: display label, Value: (lat_column, lon_column)
+    candidates: Dict[str, Tuple[str, str]] = {}
+
+    # Check for raw data.
+    if "GPS_lat" in df.columns and "GPS_lon" in df.columns:
+        candidates["raw (GPS_lat, GPS_lon)"] = ("GPS_lat", "GPS_lon")
+
+    # Check for preprocessed columns.
+    for col in df.columns:
+        prefix = "GPS_lat_smoothed_"
+        if col.startswith(prefix):
+            method = col[len(prefix):]
+            lon_candidate = f"GPS_lon_smoothed_{method}"
+            if lon_candidate in df.columns:
+                candidates[f"preprocessed ({method})"] = (col, lon_candidate)
+
+    if not candidates:
+        raise KeyError("No valid GPS data found. Expected raw 'GPS_lat'/'GPS_lon' or preprocessed "
+                       "versions with pattern 'GPS_lat_smoothed_<method>' and 'GPS_lon_smoothed_<method>'.")
+
+    # If only one candidate is available, return it immediately.
+    options: List[str] = list(candidates.keys())
+    if len(options) == 1:
+        return candidates[options[0]]
+
+    # If multiple candidates, present a GUI dialog for selection.
+    chosen_label = csv_choose_from_options(title, prompt, options)
+    return candidates[chosen_label]
+
+
+def csv_choose_from_options(title: str, prompt: str, options: List[str]) -> str:
+    """
+    A simple GUI helper function that displays a combobox of options
+    and returns the selected option.
+    """
+    selected_value = {"value": None}
+
+    def on_ok():
+        selected = combobox.get()
+        if selected not in options:
+            messagebox.showerror("Invalid Selection", "Please select a valid option.")
+            return
+        selected_value["value"] = selected
+        dialog.destroy()
+
+    dialog = tk.Tk()
+    dialog.title(title)
+    dialog.resizable(False, False)
+
+    # Center the window on the screen.
+    dialog.update_idletasks()
+    width = 350
+    height = 150
+    x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+    y = (dialog.winfo_screenheight() // 2) - (height // 2)
+    dialog.geometry(f"{width}x{height}+{x}+{y}")
+
+    # Prompt label.
+    label = tk.Label(dialog, text=prompt)
+    label.pack(pady=(20, 10))
+
+    # Combobox for options.
+    combobox = ttk.Combobox(dialog, values=options, state="readonly", width=30)
+    combobox.pack(pady=5)
+    combobox.current(0)  # default selection
+
+    # OK button.
+    ok_button = tk.Button(dialog, text="OK", command=on_ok)
+    ok_button.pack(pady=(10, 20))
+
+    dialog.mainloop()
+
+    if selected_value["value"] is None:
+        raise ValueError("No selection was made.")
+    return selected_value["value"]

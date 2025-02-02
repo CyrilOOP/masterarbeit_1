@@ -9,6 +9,7 @@ from folium.plugins import TimestampedGeoJson
 from matplotlib import colormaps, colors
 from branca.colormap import LinearColormap
 
+import csv_tools
 
 
 def generate_map_from_csv(subset_full_path: str) -> None:
@@ -50,8 +51,8 @@ def generate_map_from_csv(subset_full_path: str) -> None:
             print("Using default columns: GPS_lat and GPS_lon")
         else:
             # Use smoothed columns with the selected suffix
-            lat_col = f"GPS_lat_smooth_{selected_method}"
-            lon_col = f"GPS_lon_smooth_{selected_method}"
+            lat_col = f"GPS_lat_smoothed_{selected_method}"
+            lon_col = f"GPS_lon_smoothed_{selected_method}"
 
             if lat_col in df.columns and lon_col in df.columns:
                 lat_vals = df[lat_col]
@@ -127,7 +128,7 @@ def generate_map_from_csv(subset_full_path: str) -> None:
         ).add_to(m)
 
     # -------------------------------------------------------------------------
-    # 6. Uniform Path (Single Color)
+    # 6. GPS Path either from the rows or from the selected smoothed if exist
     # -------------------------------------------------------------------------
     uniform_path_fg = folium.FeatureGroup(name="Uniform Path", show=True)
     for i in range(len(gdf) - 1):
@@ -140,6 +141,45 @@ def generate_map_from_csv(subset_full_path: str) -> None:
             opacity=1
         ).add_to(uniform_path_fg)
     uniform_path_fg.add_to(m)
+
+
+    # -------------------------------------------------------------------------
+    # 6.1. Additional GPS path if needed
+    # -------------------------------------------------------------------------
+    # Use csv_select_gps_columns to determine which columns contain the GPS coordinates (lat and long)
+    lat_column, lon_column = csv_tools.csv_select_gps_columns(df)
+
+    # Create a geometry column using the selected GPS coordinate columns.
+    df["geometry"] = df.apply(
+        lambda row: Point(row[lon_column], row[lat_column])
+        if pd.notna(row[lat_column]) and pd.notna(row[lon_column])
+        else None,
+        axis=1
+    )
+
+    # Convert the DataFrame to a GeoDataFrame with CRS set to EPSG:4326.
+    gps_gdf = gpd.GeoDataFrame(df, geometry="geometry", crs="EPSG:4326")
+    gps_gdf.dropna(subset=["geometry"], inplace=True)
+    if gps_gdf.empty:
+        raise ValueError("No valid GPS coordinates found in the data.")
+
+    # Create a FeatureGroup for the GPS coordinates path (toggleable via the LayerControl)
+    gps_path_fg = folium.FeatureGroup(name="GPS Coordinates Path", show=False)
+
+    # Draw a polyline connecting the consecutive GPS points.
+    for i in range(len(gps_gdf) - 1):
+        gps_lat1, gps_lon1 = gps_gdf.iloc[i].geometry.y, gps_gdf.iloc[i].geometry.x
+        gps_lat2, gps_lon2 = gps_gdf.iloc[i + 1].geometry.y, gps_gdf.iloc[i + 1].geometry.x
+        folium.PolyLine(
+            [(gps_lat1, gps_lon1), (gps_lat2, gps_lon2)],
+            color="purple",  # Distinctive color for the GPS path
+            weight=8,
+            opacity=1
+        ).add_to(gps_path_fg)
+
+    # Add the FeatureGroup to your map object (assumed to be 'm')
+    gps_path_fg.add_to(m)
+
 
     # -------------------------------------------------------------------------
     # 7. Speed Path (Optional)
