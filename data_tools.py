@@ -230,15 +230,18 @@ def data_delete_the_one_percent(df: pd.DataFrame, config: Dict[str, str]):
     # Get required config values (with defaults, if needed).
     date_col = config.get("date_column", "DatumZeit")
     yaw_rate_col = config.get("yaw_rate_column", "yaw_rate_deg_s")
-
+    input_lower_bound = config["delete_lower_bound_percentage"]/100
+    print(f'input_lower_bound: {input_lower_bound}')
+    input_upper_bound = config["delete_upper_bound_percentage"]/100
+    print(f'input_upper_bound: {input_upper_bound}')
     # Check if required columns exist in df
     if yaw_rate_col not in df.columns or date_col not in df.columns:
         raise ValueError(f"The required columns '{yaw_rate_col}' or '{date_col}' "
                          f"are missing from the CSV file.")
 
     # Calculate 1% and 99% quantiles for yaw_rate
-    lower_bound = df[yaw_rate_col].quantile(0.01)
-    upper_bound = df[yaw_rate_col].quantile(1)
+    lower_bound = df[yaw_rate_col].quantile(input_lower_bound)
+    upper_bound = df[yaw_rate_col].quantile(input_upper_bound)
 
     # Filter rows within the quantile range
     df = df[(df[yaw_rate_col] >= lower_bound) & (df[yaw_rate_col] <= upper_bound)]

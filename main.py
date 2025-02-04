@@ -5,7 +5,7 @@ from typing import Dict, List, Tuple, Any
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QListWidget, QLineEdit, QPushButton, QDoubleSpinBox, QMessageBox, QFileDialog,
-    QCheckBox, QGridLayout, QListWidgetItem
+    QCheckBox, QGridLayout, QListWidgetItem, QFormLayout
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon
@@ -35,7 +35,7 @@ class DataProcessingApp(QMainWindow):
     Das PyQt-basierte GUI-Fenster, das:
      - Die zu verarbeitenden Teildateien (Subsets) anzeigt und filtern lässt
      - Processing-Schritte auswählbar macht
-     - Min. Abstandswert (min_distance) erfassen lässt
+     - Min. Abstandswert (min_distance) und nun auch zwei Prozentwerte (untere und obere Grenze) erfassen lässt
     """
     def __init__(self, default_config: Dict[str, bool], subset_folder: str, pre_selected_date: str = None):
         super().__init__()
@@ -47,6 +47,10 @@ class DataProcessingApp(QMainWindow):
         self.selected_steps: Dict[str, bool] = {}
         self.selected_subsets: List[str] = []
         self.min_distance: float = 1.0
+
+        # Neue Attribute für die Prozentangaben
+        self.delete_lower_percentage: float = 1.0   # Default: 1%
+        self.delete_upper_percentage: float = 99.0  # Default: 99%
 
         # Zum Filtern in der GUI
         self.subset_files: List[str] = []
@@ -69,7 +73,7 @@ class DataProcessingApp(QMainWindow):
         # Baue die GUI-Komponenten auf
         main_layout.addWidget(self.create_file_selection_group())
         main_layout.addWidget(self.create_processing_steps_group())
-        main_layout.addWidget(self.create_distance_input_group())
+        main_layout.addWidget(self.create_distance_and_percentage_input_group())
         main_layout.addWidget(self.create_subsets_group())
         main_layout.addWidget(self.create_action_button())  # Start Processing
 
@@ -167,17 +171,55 @@ class DataProcessingApp(QMainWindow):
 
         return group
 
-    def create_distance_input_group(self) -> QWidget:
-        """Spinbox für die Mindestdistanz (min_distance)."""
+    def create_distance_and_percentage_input_group(self) -> QWidget:
+        """
+        Creates an input area with a QFormLayout where each label is paired with its input field.
+        The QDoubleSpinBoxes are constrained in width to prevent them from stretching too wide.
+        This version uses custom styles for the labels to override the global QLabel stylesheet.
+        """
         group = QWidget()
-        layout = QHBoxLayout(group)
-        layout.addWidget(QLabel("Minimum Distance (meters):"))
+        form_layout = QFormLayout(group)
+        form_layout.setSpacing(8)  # Adjust spacing between rows as needed
 
+        # Define a custom style for our labels that we want to be smaller and not uppercase or bold.
+        # Note: Qt's QSS may not support text-transform. If that's the case, the text might still appear
+        # in uppercase because of the global rule. In that case, consider manually setting the text.
+        label_style = "font-size: 14px; font-weight: normal; text-transform: none;"
+
+        # Minimum Distance row
+        min_label = QLabel("Minimum Distance (meters):")
+        min_label.setObjectName("smallLabel")
+
+        # Use an ID selector to override the global styling:
+        min_label.setStyleSheet("#smallLabel { " + label_style + " }")
         self.distance_input = QDoubleSpinBox()
         self.distance_input.setRange(0.001, 1000.0)
         self.distance_input.setSingleStep(0.1)
         self.distance_input.setValue(self.min_distance)
-        layout.addWidget(self.distance_input)
+        self.distance_input.setMaximumWidth(100)  # Limit the width of the input
+        form_layout.addRow(min_label, self.distance_input)
+
+        # Delete Lower Boundary Percentage row
+        lower_label = QLabel("Delete Lower Boundary (%):")
+        lower_label.setObjectName("smallLabelLower")
+        lower_label.setStyleSheet("#smallLabelLower { " + label_style + " }")
+        self.lower_percentage_input = QDoubleSpinBox()
+        self.lower_percentage_input.setRange(0.0, 100.0)
+        self.lower_percentage_input.setSingleStep(0.1)
+        self.lower_percentage_input.setValue(1.0)  # Default: 1%
+        self.lower_percentage_input.setMaximumWidth(100)  # Limit the width
+        form_layout.addRow(lower_label, self.lower_percentage_input)
+
+        # Delete Upper Boundary Percentage row
+        upper_label = QLabel("Delete Upper Boundary (%):")
+        upper_label.setObjectName("smallLabelUpper")
+        upper_label.setStyleSheet("#smallLabelUpper { " + label_style + " }")
+        self.upper_percentage_input = QDoubleSpinBox()
+        self.upper_percentage_input.setRange(0.0, 100.0)
+        self.upper_percentage_input.setSingleStep(0.1)
+        self.upper_percentage_input.setValue(99.0)  # Default: 99%
+        self.upper_percentage_input.setMaximumWidth(100)  # Limit the width
+        form_layout.addRow(upper_label, self.upper_percentage_input)
 
         return group
 
@@ -300,7 +342,11 @@ class DataProcessingApp(QMainWindow):
         Liest die eingestellten Optionen aus und schließt das Fenster,
         damit im Hauptteil (unten) weitergemacht werden kann.
         """
+        # Lese den min_distance und die neuen Prozent-Werte aus
         self.min_distance = self.distance_input.value()
+        self.delete_lower_percentage = self.lower_percentage_input.value()
+        self.delete_upper_percentage = self.upper_percentage_input.value()
+
         selected_items = self.subset_list.selectedItems()
 
         if not selected_items:
@@ -322,15 +368,18 @@ class DataProcessingApp(QMainWindow):
         # Fensterschluss
         self.close()
 
-    def get_results(self) -> Tuple[Dict[str, bool], List[str], float]:
+    def get_results(self) -> Tuple[Dict[str, bool], List[str], float, float, float]:
         """
         Gibt nach dem GUI-Lauf:
          - das Dictionary mit den Schritten,
          - die Liste der ausgewählten Subset-Pfade,
-         - die eingegebene Mindestdistanz
+         - die eingegebene Mindestdistanz,
+         - den unteren Prozentwert,
+         - den oberen Prozentwert
         zurück.
         """
-        return self.selected_steps, self.selected_subsets, self.min_distance
+        return (self.selected_steps, self.selected_subsets,
+                self.min_distance, self.delete_lower_percentage, self.delete_upper_percentage)
 
 
 def main(config: Dict[str, Any], subsets: List[str]) -> None:
@@ -352,10 +401,10 @@ def main(config: Dict[str, Any], subsets: List[str]) -> None:
 
             # Mapping der möglichen Schritte (Name im config -> (Funktion, suffix))
             processing_steps = [
+                ("filter_GPS_with_rolling_windows", data_rolling_windows_gps_data, "rollingW"),
                 ("smooth_gps_data_savitzky",  data_smooth_gps_savitzky,   "savitzky"),
                 ("smooth_gps_data_gaussian",  data_smooth_gps_gaussian,   "gaussian"),
                 ("smooth_gps_particule_filter", data_particle_filter, "particule"),
-                ("filter_GPS_with_rolling_windows", data_rolling_windows_gps_data, "rollingW"),
                 ("convert_to_planar",         data_convert_to_planar,     "planar"),
                 ("filter_with_distances",     data_filter_points_by_distance, "dist"),
                 ("parse_time",                parse_time_and_compute_dt,   "time"),
@@ -364,7 +413,7 @@ def main(config: Dict[str, Any], subsets: List[str]) -> None:
                 ("compute_yaw_rate_from_heading", data_compute_yaw_rate_from_heading, "yawRate"),
                 ("use_kalman_on_yaw_rate",    data_kalman_on_yaw_rate, "kalman"),
                 ("remove_the_outliers",       data_remove_gps_outliers_neighbors, "outliers"),
-                ("delete_the_one_percent",    data_delete_the_one_percent, "1percent"),
+                ("delete_the_boundaries",    data_delete_the_one_percent, "delBoundaries"),
             ]
 
             processed_suffixes = []
@@ -391,16 +440,11 @@ def main(config: Dict[str, Any], subsets: List[str]) -> None:
             # Falls wir hier oder an anderer Stelle *zusätzlich* `statistics` wollen,
             # können wir das wahlweise direkt auf dem Original- oder dem neu erzeugten File machen.
             if config.get("statistics", False):
-                # Hier generieren wir z. B. die Statistik basierend auf der NEUEN Datei,
-                # sofern du sie abgespeichert hast.
-                # Oder eben subset_path, falls du die Statistik vom Original willst.
-                # Beispiel:
                 final_file = save_path if config.get("save_to_csv", False) else subset_path
                 csv_get_statistics(final_file, config)
 
             # Karte generieren?
             if config.get("generate_map", False):
-                # Ebenfalls entscheiden, ob auf Basis des neu erzeugten oder des alten Files
                 final_file = save_path if config.get("save_to_csv", False) else subset_path
                 generate_map_from_csv(final_file)
 
@@ -416,17 +460,16 @@ if __name__ == "__main__":
         "filter_GPS_with_rolling_windows": True,
         "smooth_gps_data_savitzky": True,
         "smooth_gps_data_gaussian": True,
-        "smooth_gps_particule_filter" : True,
+        "smooth_gps_particule_filter": True,
         "convert_to_planar": True,
         "filter_with_distances": True,
         "parse_time": True,
         "compute_heading_from_xy": True,
-
-        "compute_heading_from_ds" : True,
+        "compute_heading_from_ds": True,
         "compute_yaw_rate_from_heading": True,
         "use_kalman_on_yaw_rate": True,
         "remove_the_outliers": True,
-        "delete_the_one_percent" : True,
+        "delete_the_boundaries": True,
         "save_to_csv": True,
         "enable_statistics_on_save": True,  # bedeutet: csv_save ruft csv_get_statistics automatisch auf
         "generate_map": False,
@@ -438,7 +481,8 @@ if __name__ == "__main__":
     app.exec_()
 
     # Hole die vom Nutzer getroffene Auswahl
-    selected_steps, selected_subsets, min_distance = window.get_results()
+    (selected_steps, selected_subsets, min_distance,
+     delete_lower_percentage, delete_upper_percentage) = window.get_results()
 
     # Baue das finale Config-Dict
     CONFIG = {
@@ -448,15 +492,15 @@ if __name__ == "__main__":
         "encoding": "utf-8",
         "date_column": "DatumZeit",
         "speed_column": "Geschwindigkeit in m/s",
-        "acc_col_for_particule_filter" : "Beschleunigung in m/s2",
+        "acc_col_for_particule_filter": "Beschleunigung in m/s2",
         "lat_col": "GPS_lat",
         "lon_col": "GPS_lon",
-        "speed_threshold_stopped_rolling_windows" : 0.5,
-        "time_window_slow_rolling_windows" : 5.0,
-        "slow_speed_threshold_rolling_windows" : 5.0,
-        'time_rolling_window_mid' : 2.0,
-        'mid_speed_threshold_rolling_windows' : 50.0,
-        "time_rolling_window_fast" : 1.0,
+        "speed_threshold_stopped_rolling_windows": 0.5,
+        "time_window_slow_rolling_windows": 5.0,
+        "slow_speed_threshold_rolling_windows": 5.0,
+        'time_rolling_window_mid': 2.0,
+        'mid_speed_threshold_rolling_windows': 50.0,
+        "time_rolling_window_fast": 1.0,
         "x_col": "x",
         "y_col": "y",
         "lat_col_smooth": "GPS_lat_smooth",
@@ -464,10 +508,13 @@ if __name__ == "__main__":
         "distance_col": "distance",
         "time_between_points": "dt",
         "heading_col_for_yaw_rate_function": "heading_deg_ds",
-        "yaw_col_for_kalman" : "yaw_rate_deg_s",
-        "N_for_particule_filter" : 1000,
-        "threshold_for_outliers_removing" : 0.005,
+        "yaw_col_for_kalman": "yaw_rate_deg_s",
+        "N_for_particule_filter": 1000,
+        "threshold_for_outliers_removing": 0.005,
         "min_distance": min_distance,
+        # Die neuen Prozent-Werte zum Filtern (1% links und 1% rechts)
+        "delete_lower_bound_percentage": delete_lower_percentage,
+        "delete_upper_bound_percentage": delete_upper_percentage,
         # Steps aus dem GUI
         **selected_steps
     }
