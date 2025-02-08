@@ -4,7 +4,7 @@ import matplotlib.dates as mdates
 import re
 
 # Load the CSV file
-file_path = "subsets_by_date/2024-04-02/2024-04-02_rollingW_planar_time_heading_headingDS_yawRate.csv"  # Replace with your file path
+file_path = "subsets_by_date/2024-04-02/2024-04-02_rollingW_planar_time_headingDS_yawRate.csv"
 file_path_raw = "subsets_by_date/2024-04-02/2024-04-02.csv"
 
 # Extract the date from the file path using regex
@@ -30,6 +30,10 @@ fig, ax = plt.subplots(figsize=(120, 6))  # Adjust figure size
 
 # Plot Gier
 ax.plot(data_raw["DatumZeit"], data_raw["Gier"], label="Gier from raw", alpha=0.7)
+
+# Plot Gier Ariane
+ax.plot(data_raw["DatumZeit"], data_raw["Gier_GPS"], label="Gier from Ariane", alpha=0.7, color="red")
+
 
 # Plot yaw_rate_deg_s
 ax.plot(data["DatumZeit"], data["yaw_rate_deg_s"], label="Yaw Rate (deg/s)", alpha=0.7)

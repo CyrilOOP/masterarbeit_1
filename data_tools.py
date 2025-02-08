@@ -632,49 +632,35 @@ def data_remove_gps_outliers(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 
 def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
-    Reduce the DataFrame row count by grouping:
-      1) All consecutive 'stopped' points (speed < threshold) into ONE row
-      2) Moving points in a speed-dependent time window
-         (time_window = distance_window / speed, clamped between optional min/max)
+      1) A speed-class break: if the speed class changes (e.g., from stopped to a different bin),
+         we end the current group.
+      2) For "stopped" speed class: group consecutive rows until speed moves above threshold.
+      3) For "moving" speed classes: define a time window based on speed
+         (time_window = distance_window / speed),
+         but break early if speed crosses into a new class.
 
-    For each group/window, we compute the average lat/lon (and optionally speed),
-    then store them in new columns:
-       - "GPS_lat_smoothed_rolling_windows"
-       - "GPS_lon_smoothed_rolling_windows"
-
-    We keep the OTHER columns from the FIRST row in that group,
-    so you still have all original columns but fewer total rows in the final output.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Must include:
-            - A datetime column (config["date_column"], default "DatumZeit").
-            - A speed column (named config["speed_column"] or default "speed").
-        We also select lat/lon columns via csv_select_gps_columns (stubbed here).
-    config : dict
-        Expects keys:
-          "speed_threshold_stopped_rolling_windows": float
-          "distance_window_meters": float
-          "time_window_min": float (optional)
-          "time_window_max": float (optional)
-          "speed_column": str
-          "date_column": str (optional, default "DatumZeit")
-          ... plus any other keys for controlling the behavior.
-
-    Returns
-    -------
-    pd.DataFrame
-        A new DataFrame with:
-          - FEWER rows: 1 row per group/window
-          - All original columns from the FIRST row of each group
-          - 2 extra columns:
-              "GPS_lat_smoothed_rolling_windows",
-              "GPS_lon_smoothed_rolling_windows"
-            containing the group-average lat/lon.
-        The 'time_numeric' in each row is set to the midpoint of that window.
+    The final row of each group contains averaged lat/lon/speed and a midpoint time.
     """
 
+    # -------------------------------------------------------------------------
+    # 1. Parse config and identify columns
+    # -------------------------------------------------------------------------
+    date_col = config.get("date_column", "DatumZeit")
+    speed_col = config["speed_column"]
+    speed_threshold_stopped = config["speed_threshold_stopped_rolling_windows"]
+    distance_window_meters = config["distance_window_meters"]
+    time_window_min = config["time_window_min"]
+    time_window_max = config["time_window_max"]
+
+    # If config doesn't explicitly provide speed_bins,
+    # we assume a simple 2-bin scenario: [0, threshold_stopped, ∞).
+    speed_bins = config["speed_bins"]
+
+    # 2. Convert date_col to numeric timestamps (float seconds)
+    df[date_col] = pd.to_datetime(df[date_col], format="%Y-%m-%d %H:%M:%S.%f")
+    t_arr = df[date_col].astype(np.int64) / 1e9  # convert ns -> s (float)
+
+    # 3. Identify lat/lon columns (stubbed function you'd have in your code)
     lat_col_rol_win, lon_col_rol_win = csv_select_gps_columns(
         df,
         title="Select GPS Data for rolling windows",
@@ -682,70 +668,72 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
     )
     print(f"Using GPS columns: {lat_col_rol_win} and {lon_col_rol_win}")
 
-    # 1. Parse datetime column -> numeric timestamps (in seconds)
-    date_col = config.get("date_column", "DatumZeit")
-    df[date_col] = pd.to_datetime(df[date_col], format="%Y-%m-%d %H:%M:%S.%f")
-    # Convert to UNIX timestamp (float seconds)
-    t_arr = df[date_col].astype(np.int64) / 1e9
-
-    # -------------------------------------------------------------------------
-    # 2. Extract relevant arrays (lat, lon, speed)
-    # -------------------------------------------------------------------------
+    # 4. Extract arrays from DataFrame
     lat_arr = df[lat_col_rol_win].to_numpy(dtype=float)
     lon_arr = df[lon_col_rol_win].to_numpy(dtype=float)
-
-    speed_col = config["speed_column"]
     spd_arr = df[speed_col].to_numpy(dtype=float)
 
     n = len(df)
 
     # -------------------------------------------------------------------------
-    # 3. Config parameters
+    # Helper: get_speed_class
     # -------------------------------------------------------------------------
-    speed_threshold_stopped = config["speed_threshold_stopped_rolling_windows"]
-    distance_window_meters = config["distance_window_meters"]
-    time_window_min = config["time_window_min"] # optional
-    time_window_max = config["time_window_max"]  # optional
+    def get_speed_class(spd, bins):
+        """
+        Returns an integer index indicating which bin 'spd' falls into.
+        E.g. if bins = [0.0, 0.3, 5.0, inf]:
+           spd < 0.3 => class 0
+           0.3 <= spd < 5.0 => class 1
+           5.0 <= spd => class 2
+        """
+        for i in range(len(bins) - 1):
+            if bins[i] <= spd < bins[i + 1]:
+                return i
+        # Fallback (should not happen if bins end at inf)
+        return len(bins) - 1
 
-    # Convert speed from e.g. km/h to m/s if needed:
-    # Here we assume speed is ALREADY in m/s.
-    # If it's in km/h, you'd do: spd_arr = spd_arr / 3.6
-
+    # -------------------------------------------------------------------------
+    # Helper: get_window_length (time window for "moving" classes)
+    # -------------------------------------------------------------------------
     def get_window_length(speed_value):
         """
         Return a time window (in seconds) based on a continuous function of speed:
-          time_window = distance_window / speed_value (clamped).
-
-        If speed < threshold_stopped, return None (we treat 'stopped' separately).
+          time_window = distance_window / speed_value (clamped between min/max).
         """
+        # If speed is below threshold_stopped, we won't use a window;
+        # that logic is handled separately for 'stopped'.
         if speed_value < speed_threshold_stopped:
-            return None  # We'll handle stopped logic in main loop
+            return None
 
-        speed_m_s = speed_value  # If needed: speed_value / 3.6 for km/h -> m/s
-
-        raw_window = distance_window_meters / (speed_m_s + 1e-6)
-        # Clamp extremes
+        # if speed is in m/s already, just use it:
+        raw_window = distance_window_meters / (speed_value + 1e-6)
         wlen = max(time_window_min, min(time_window_max, raw_window))
         return wlen
 
     # -------------------------------------------------------------------------
-    # 4. Main loop: group rows => store only ONE row per group
+    # 5. Main grouping logic
     # -------------------------------------------------------------------------
     grouped_rows = []
     i = 0
 
     while i < n:
-        current_speed = spd_arr[i]
+        # Determine the speed class of the current row
+        current_class = get_speed_class(spd_arr[i], speed_bins)
 
-        # CASE A: STOPPED => group all consecutive rows with speed < threshold
-        if current_speed < speed_threshold_stopped:
+        # CASE A: Stopped class (i.e., current_class == 0 if bins=[0, thr, inf])
+        #         or more generally, you can treat class 0 as "stopped"
+        if current_class == 0:
             sum_lat = 0.0
             sum_lon = 0.0
             sum_spd = 0.0
             count = 0
-
             j = i
-            while j < n and spd_arr[j] < speed_threshold_stopped:
+
+            # Accumulate all consecutive rows that remain in class 0 (stopped)
+            while j < n:
+                if get_speed_class(spd_arr[j], speed_bins) != 0:
+                    # Speed class changed => break
+                    break
                 sum_lat += lat_arr[j]
                 sum_lon += lon_arr[j]
                 sum_spd += spd_arr[j]
@@ -756,24 +744,26 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
             mean_lon = sum_lon / count
             mean_spd = sum_spd / count
 
-            # Create a NEW row from the FIRST row's data in this group
-            row_dict = df.iloc[i].to_dict()  # copy original columns
+            # Build the grouped row from the FIRST row's data
+            row_dict = df.iloc[i].to_dict()
             midpoint_time = 0.5 * (t_arr[i] + t_arr[j - 1])
             row_dict["time_numeric"] = midpoint_time
             row_dict[speed_col] = mean_spd
-
-            # Add new columns for the smoothed lat/lon
             row_dict["GPS_lat_smoothed_rolling_windows"] = mean_lat
             row_dict["GPS_lon_smoothed_rolling_windows"] = mean_lon
 
             grouped_rows.append(row_dict)
             i = j
 
-        # CASE B: MOVING => define a time window based on speed
+        # CASE B: "Moving" classes
         else:
-            wlen = get_window_length(current_speed)
-            # If speed < threshold_stopped, wlen would be None,
-            # but we already handled that case above.
+            # Use the speed at the start of the group to define a window length
+            initial_speed = spd_arr[i]
+            wlen = get_window_length(initial_speed)
+            if wlen is None:
+                # If for some reason it's None, that means speed < threshold (contradiction).
+                # We'll treat it as "stopped" or skip. But normally won't happen.
+                wlen = time_window_min  # fallback
 
             window_end = t_arr[i] + wlen
 
@@ -781,9 +771,17 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
             sum_lon = 0.0
             sum_spd = 0.0
             count = 0
-
             j = i
-            while j < n and t_arr[j] <= window_end:
+
+            # Accumulate points in the SAME speed class, as long as we're within window_end
+            while j < n:
+                # If speed class changed, break
+                if get_speed_class(spd_arr[j], speed_bins) != current_class:
+                    break
+                # If time passes the window, break
+                if t_arr[j] > window_end:
+                    break
+
                 sum_lat += lat_arr[j]
                 sum_lon += lon_arr[j]
                 sum_spd += spd_arr[j]
@@ -794,12 +792,11 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
             mean_lon = sum_lon / count
             mean_spd = sum_spd / count
 
-            # Make a row from the FIRST row's data in [i..j-1]
+            # Build the grouped row from the FIRST row's data
             row_dict = df.iloc[i].to_dict()
             midpoint_time = 0.5 * (t_arr[i] + t_arr[j - 1])
             row_dict["time_numeric"] = midpoint_time
             row_dict[speed_col] = mean_spd
-
             row_dict["GPS_lat_smoothed_rolling_windows"] = mean_lat
             row_dict["GPS_lon_smoothed_rolling_windows"] = mean_lon
 
@@ -807,9 +804,8 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
             i = j
 
     # -------------------------------------------------------------------------
-    # 5. Build a NEW DataFrame with fewer rows
+    # 6. Build a new DataFrame with fewer rows
     # -------------------------------------------------------------------------
     df_grouped = pd.DataFrame(grouped_rows)
-
     return df_grouped
 

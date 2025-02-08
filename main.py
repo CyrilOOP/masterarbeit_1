@@ -495,9 +495,7 @@ if __name__ == "__main__":
         "acc_col_for_particule_filter": "Beschleunigung in m/s2",
         "lat_col": "GPS_lat",
         "lon_col": "GPS_lon",
-        "time_window_slow_rolling_windows": 5.0,
-        "slow_speed_threshold_rolling_windows": 5.0,
-        'time_rolling_window_mid': 2.0,
+
         'mid_speed_threshold_rolling_windows': 50.0,
         "time_rolling_window_fast": 1.0,
         "x_col": "x",
@@ -519,6 +517,9 @@ if __name__ == "__main__":
         "distance_window_meters" : 10,
         "time_window_min": 1.0,
         "time_window_max": 300.0,
+        "speed_bins": [0.0, 0.5, 5.0, 15.0, 30.0, float("inf")],
+
+
 
         # for the remove outliers fonction
         "speed_threshold_outliers" : 2,
