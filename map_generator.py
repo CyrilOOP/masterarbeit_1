@@ -1,44 +1,44 @@
+import os
 import numpy as np
 import pandas as pd
-import geopandas as gpd
-from shapely.geometry import Point
 import folium
 from folium.plugins import TimestampedGeoJson
-from matplotlib import colormaps, colors
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 from branca.colormap import LinearColormap
-import os
-
-from csv_tools import csv_load, csv_select_gps_columns
-
+from csv_tools import csv_load
+import tkinter as tk
+from tkinter import messagebox
 
 def generate_map_from_csv(subset_full_path: str) -> None:
     """
-    Generates a Folium map from CSV data using GPS_lat and GPS_lon exclusively.
-    If 'Geschwindigkeit in m/s' is present, it converts to Speed_kmh for coloring.
-    If 'Gier' or a yaw_rate column (e.g., 'yaw_rate_deg_s') are present, it draws
-    additional color-coded paths.
+    Generates an interactive Folium map from CSV data containing GPS information.
 
-    The map starts with no base tiles. All tile layers (OpenStreetMap, OpenRailwayMap, etc.)
-    are added as togglable overlays. If all are turned off, the map background is empty.
+    The function creates a map with multiple layers:
+      - A uniform blue polyline showing the processed GPS path.
+      - An additional raw GPS path with segments colored by "Gier" (yaw rate).
+      - (Optional) Speed-based colored paths if speed data is available.
+      - (Optional) Yaw Rate (Gier) and Yaw Rate (from heading) colored paths.
+      - Start and end markers, a title box, and a time-animated marker.
+      - Toggleable overlay tile layers.
 
     Args:
-        subset_full_path: Path to the CSV file containing the data.
+        subset_full_path (str): Path to the processed CSV file.
 
     Raises:
-        ValueError: If the CSV file is empty or contains invalid data.
+        ValueError: If required data is missing or if no valid GPS coordinates are found.
     """
-    # -------------------------------------------------------------------------
-    # 1. Load CSV
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # 1. Load Processed CSV Data
+    # =========================================================================
     base_dir = os.path.dirname(subset_full_path)
     df = pd.read_csv(subset_full_path, parse_dates=["DatumZeit"])
-
     if df.empty:
         raise ValueError("No data found in the CSV. Cannot generate map.")
 
-    # -------------------------------------------------------------------------
-    # 2. Extract Lat/Lon from GPS Columns
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # 2. Extract GPS Coordinates (with optional smoothing)
+    # =========================================================================
     if "selected_smoothing_method" in df.columns:
         selected_method = df["selected_smoothing_method"].iloc[0]
         if selected_method == "none":
@@ -54,44 +54,35 @@ def generate_map_from_csv(subset_full_path: str) -> None:
                 print(f"Using smoothed columns: {lat_col} and {lon_col}")
             else:
                 raise ValueError(
-                    f"Columns {lat_col} and {lon_col} not found in the DataFrame. Check your smoothing configuration."
+                    f"Columns {lat_col} and {lon_col} not found. Check your smoothing configuration."
                 )
     else:
         lat_vals = df["GPS_lat"]
         lon_vals = df["GPS_lon"]
-        print("The 'selected_smoothing_method' column is missing. Using default columns: GPS_lat and GPS_lon")
+        print("Column 'selected_smoothing_method' missing. Using default columns: GPS_lat and GPS_lon")
 
-    if "Geschwindigkeit in m/s" in df.columns:
-        df["Speed_kmh"] = df["Geschwindigkeit in m/s"] * 3.6
+    # Ensure we have valid lat/lon (drop rows with NaN)
+    df = df.dropna(subset=[lat_vals.name, lon_vals.name])
+    if df.empty:
+        raise ValueError("All GPS points are NaN. Cannot generate map.")
 
-    has_speed = "Speed_kmh" in df.columns and df["Speed_kmh"].notna().any()
+    # Use these updated lat/lon Series (after dropna)
+    lat_vals = df[lat_vals.name]
+    lon_vals = df[lon_vals.name]
 
+    # For labeling date in markers/title, etc.
     day_display = df["DatumZeit"].iloc[0].date()
 
-    # -------------------------------------------------------------------------
-    # 3. Build GeoDataFrame in EPSG:4326
-    # -------------------------------------------------------------------------
-    geometry = [
-        Point(lon, lat) if pd.notna(lon) and pd.notna(lat) else None
-        for lat, lon in zip(lat_vals, lon_vals)
-    ]
-    gdf = gpd.GeoDataFrame(df, geometry=geometry, crs="EPSG:4326")
-    gdf.dropna(subset=["geometry"], inplace=True)
-    if gdf.empty:
-        raise ValueError("All geometry points were NaN. Cannot generate map.")
-
-    def get_lat_lon(row):
-        return (row.geometry.y, row.geometry.x)
-
-    # -------------------------------------------------------------------------
-    # 4. Initialize Folium Map with no base tiles
-    # -------------------------------------------------------------------------
-    start_lat, start_lon = get_lat_lon(gdf.iloc[0])
+    # =========================================================================
+    # 4. Initialize Folium Map with No Base Tiles
+    # =========================================================================
+    start_lat = lat_vals.iloc[0]
+    start_lon = lon_vals.iloc[0]
     m = folium.Map(location=[start_lat, start_lon], zoom_start=14, tiles=None)
 
-    # -------------------------------------------------------------------------
-    # 5. Add Overlay Tile Layers (toggleable)
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # 5. Add Overlay Tile Layers (Toggleable)
+    # =========================================================================
     folium.TileLayer(
         tiles="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
         name="OpenStreetMap",
@@ -115,86 +106,182 @@ def generate_map_from_csv(subset_full_path: str) -> None:
             show=layer_info["show"]
         ).add_to(m)
 
-    # -------------------------------------------------------------------------
-    # 6. GPS Path either from the rows or from the selected smoothed if exist
-    # -------------------------------------------------------------------------
-    uniform_path_fg = folium.FeatureGroup(name="Uniform Path", show=True)
-    for i in range(len(gdf) - 1):
-        lat1, lon1 = get_lat_lon(gdf.iloc[i])
-        lat2, lon2 = get_lat_lon(gdf.iloc[i + 1])
-        folium.PolyLine(
-            [(lat1, lon1), (lat2, lon2)],
-            color="blue",
-            weight=8,
-            opacity=1
-        ).add_to(uniform_path_fg)
-    uniform_path_fg.add_to(m)
+#=================================================================================
+#Ask if raw orignal path is wanted
+#==================================================================================
+    # Create a hidden root window
+    root = tk.Tk()
+    root.withdraw()
 
-    # -------------------------------------------------------------------------
-    # 6.1. Additional GPS path if needed
-    # -------------------------------------------------------------------------
-    # Extract the base filename (e.g., '2025-02-02_something.csv')
-    filename = os.path.basename(subset_full_path)
-    # Extract the date part from the filename (assumes the filename starts with 'YYYY-MM-DD')
-    date_extracted = filename.split('_')[0]
-    # Get the directory where the original file is located
-    directory = os.path.dirname(subset_full_path)
-    # Construct the new filename and path (e.g., '2025-02-02.csv')
-    raw_file = os.path.join(directory, f"{date_extracted}.csv")
+    # Ask the user
+    run_raw = messagebox.askyesno(
+        title="Include Raw Original GPS?",
+        message="Do you want to include the raw original GPS path (with Gier coloring)?\nMoving marker won't be available)"
 
-    print(f'The raw file path is {raw_file}')
-
-    # Load the CSV using your existing csv_load function
-    df_raw = csv_load(raw_file)
-    # Determine which columns contain the GPS coordinates (latitude and longitude)
-    lat_column, lon_column = csv_select_gps_columns(
-        df_raw,
-        title="GPS data to compare",
-        prompt="GPS data to compare"
     )
-    # Filter out rows where either the latitude or longitude is missing.
-    df_valid = df_raw[pd.notna(df_raw[lat_column]) & pd.notna(df_raw[lon_column])]
-    # Create a list of coordinates in (latitude, longitude) format.
-    coordinates = df_valid.apply(lambda row: (row[lat_column], row[lon_column]), axis=1).tolist()
-    if len(coordinates) < 2:
-        raise ValueError("Not enough valid GPS coordinates to draw a path.")
-    # Create a FeatureGroup for the GPS coordinates path.
-    gps_path_fg = folium.FeatureGroup(name="GPS Coordinates Path", show=False)
-    # Draw a polyline connecting the GPS points in green.
-    folium.PolyLine(
-        locations=coordinates,
-        color="green",
-        weight=8,
-        opacity=1
-    ).add_to(gps_path_fg)
-    gps_path_fg.add_to(m)
 
-    # -------------------------------------------------------------------------
-    # 7. Speed Path (Optional)
-    # -------------------------------------------------------------------------
+    # Destroy the hidden root window once we have the answer
+    root.destroy()
+    color_scheme_gier = {}
+
+    if run_raw:
+        # =================================================================================
+        # 7. Draw Raw untouched original GPS Path with "Gier" (Yaw Rate) Coloring if wanted
+        # =================================================================================
+        raw_filename = os.path.basename(subset_full_path)
+        raw_date = raw_filename.split('_')[0]  # Expects filename starting with YYYY-MM-DD
+        raw_directory = os.path.dirname(subset_full_path)
+        raw_csv_file_path = os.path.join(raw_directory, f"{raw_date}.csv")
+        print(f"Raw CSV file path: {raw_csv_file_path}")
+
+        # --- Load Raw Data and Validate Required Columns ---
+        raw_df = csv_load(raw_csv_file_path)
+
+        # Ensure the raw data contains the necessary columns
+        for col in ["GPS_lat", "GPS_lon", "Gier"]:
+            if col not in raw_df.columns:
+                raise ValueError(f"Raw data is missing the required column: {col}")
+
+        # Drop rows where any of the required values are missing
+        raw_df = raw_df.dropna(subset=["GPS_lat", "GPS_lon", "Gier"])
+        if len(raw_df) < 2:
+            raise ValueError("Not enough valid raw GPS data to draw a path.")
+
+        # Convert the "Gier" column to numeric
+        raw_df["Gier"] = pd.to_numeric(raw_df["Gier"], errors="coerce")
+        raw_df = raw_df.dropna(subset=["Gier"])
+
+        # --- Set Up a Centered Colormap for "Gier" ---
+        gier_min_raw = raw_df["Gier"].min()
+        gier_max_raw = raw_df["Gier"].max()
+        max_abs_raw = max(abs(gier_min_raw), abs(gier_max_raw))
+        gier_min_raw, gier_max_raw = -max_abs_raw, max_abs_raw
+
+        norm_gier_raw = mcolors.Normalize(vmin=gier_min_raw, vmax=gier_max_raw)
+        gier_cmap = plt.get_cmap("RdBu")
+
+        gier_color_steps = np.linspace(gier_min_raw, gier_max_raw, num=100)
+        gier_color_list = [
+            mcolors.to_hex(gier_cmap(norm_gier_raw(val)))
+            for val in gier_color_steps
+        ]
+        gier_colormap = LinearColormap(
+            colors=gier_color_list,
+            vmin=gier_min_raw,
+            vmax=gier_max_raw,
+            caption="Yaw Rate (Gier)"
+        )
+        gier_colormap.add_to(m)
+
+        # --- Store the Gier colormap settings ---
+        color_scheme_gier = {
+            "norm": norm_gier_raw,
+            "cmap": gier_cmap,
+            "vmin": gier_min_raw,
+            "vmax": gier_max_raw
+        }
+
+        # --- Draw the Raw GPS Path Colored by "Gier" ---
+        raw_path_fg = folium.FeatureGroup(name="Raw Original GPS with Gier as Color", show=False)
+        for i in range(len(raw_df) - 1):
+            lat1 = raw_df.iloc[i]["GPS_lat"]
+            lon1 = raw_df.iloc[i]["GPS_lon"]
+            lat2 = raw_df.iloc[i + 1]["GPS_lat"]
+            lon2 = raw_df.iloc[i + 1]["GPS_lon"]
+            gier_value = raw_df.iloc[i]["Gier"]
+            segment_color = mcolors.to_hex(gier_cmap(norm_gier_raw(gier_value)))
+            folium.PolyLine(
+                locations=[(lat1, lon1), (lat2, lon2)],
+                color=segment_color,
+                weight=24,
+                opacity=1
+            ).add_to(raw_path_fg)
+        raw_path_fg.add_to(m)
+
+        # =========================================================================
+        # 13. Add Time-Animated Marker (Using Raw Data)
+        # =========================================================================
+        # Ensure that 'DatumZeit' is parsed as datetime in the raw data.
+        if "DatumZeit" in raw_df.columns:
+            raw_df["DatumZeit"] = pd.to_datetime(raw_df["DatumZeit"], errors="coerce")
+        else:
+            raise ValueError("Raw data is missing the required 'DatumZeit' column for animation.")
+
+        # Remove rows with invalid or missing time data
+        raw_df = raw_df.dropna(subset=["DatumZeit"])
+
+        features = []
+        for _, row in raw_df.iterrows():
+            lat = row["GPS_lat"]
+            lon = row["GPS_lon"]
+            time_val = row["DatumZeit"]
+            time_str = time_val.isoformat()
+
+            popup_text = (
+                f"<b>Time:</b> {time_val}<br>"
+                f"<b>Gier:</b> {row['Gier']}"
+            )
+
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": {
+                    "time": time_str,
+                    "popup": popup_text,
+                    "style": {"color": "black", "fillColor": "black"},
+                    "icon": "circle"
+                }
+            })
+
+        if features:
+            geojson_data = {"type": "FeatureCollection", "features": features}
+            animated_marker = TimestampedGeoJson(
+                data=geojson_data,
+                transition_time=500,
+                loop=False,
+                auto_play=False,
+                add_last_point=True,
+                period="PT10S",
+                duration="PT1S"
+            )
+            animated_marker.add_to(m)
+
+    else:
+        print("Skipping the raw original GPS path to save time...")
+    # =========================================================================
+    # 8. Draw Speed Path (if Speed data is available)
+    # =========================================================================
+    # Convert speed from m/s to km/h if available
+    if "Geschwindigkeit in m/s" in df.columns:
+        df["Speed_kmh"] = df["Geschwindigkeit in m/s"] * 3.6
+    has_speed = "Speed_kmh" in df.columns and df["Speed_kmh"].notna().any()
+
     if has_speed:
         speed_path_fg = folium.FeatureGroup(name="Speed Path", show=False)
-        speed_min, speed_max = gdf["Speed_kmh"].min(), gdf["Speed_kmh"].max()
-        norm_speed = colors.Normalize(vmin=speed_min, vmax=speed_max)
-        cmap_speed = colormaps.get_cmap("turbo")
+        speed_min = df["Speed_kmh"].min()
+        speed_max = df["Speed_kmh"].max()
+        norm_speed = mcolors.Normalize(vmin=speed_min, vmax=speed_max)
+        cmap_speed = plt.get_cmap("turbo")
 
-        for i in range(len(gdf) - 1):
-            lat1, lon1 = get_lat_lon(gdf.iloc[i])
-            lat2, lon2 = get_lat_lon(gdf.iloc[i + 1])
-            speed_val = gdf.iloc[i]["Speed_kmh"]
-            speed_color = colors.to_hex(cmap_speed(norm_speed(speed_val)))
-
+        for i in range(len(df) - 1):
+            # Use the lat/lon from our selected columns
+            lat1 = lat_vals.iloc[i]
+            lon1 = lon_vals.iloc[i]
+            lat2 = lat_vals.iloc[i + 1]
+            lon2 = lon_vals.iloc[i + 1]
+            speed_val = df.iloc[i]["Speed_kmh"]
+            speed_color = mcolors.to_hex(cmap_speed(norm_speed(speed_val)))
             folium.PolyLine(
-                [(lat1, lon1), (lat2, lon2)],
+                locations=[(lat1, lon1), (lat2, lon2)],
                 color=speed_color,
                 weight=10,
                 opacity=1
             ).add_to(speed_path_fg)
-
         speed_path_fg.add_to(m)
 
+        # Create and add a speed colormap legend
         color_steps = range(int(speed_min), int(speed_max) + 1, 10)
-        color_list = [colors.to_hex(cmap_speed(norm_speed(v))) for v in color_steps]
+        color_list = [mcolors.to_hex(cmap_speed(norm_speed(v))) for v in color_steps]
         speed_colormap = LinearColormap(
             colors=color_list,
             vmin=speed_min,
@@ -203,110 +290,113 @@ def generate_map_from_csv(subset_full_path: str) -> None:
         )
         speed_colormap.add_to(m)
 
-    # -------------------------------------------------------------------------
-    # 8. Gier Path (Optional)
-    # -------------------------------------------------------------------------
-    if "Gier" in gdf.columns and gdf["Gier"].notna().any():
-        gier_path_fg = folium.FeatureGroup(name="Yaw Rate Path (Gier)", show=False)
-        gier_min, gier_max = gdf["Gier"].min(), gdf["Gier"].max()
-        gier_abs_max = max(abs(gier_min), abs(gier_max))
-        gier_min, gier_max = -gier_abs_max, gier_abs_max
-        gier_norm = colors.Normalize(vmin=gier_min, vmax=gier_max)
-        gier_cmap = colormaps.get_cmap("coolwarm")
+    # # =========================================================================
+    # # 9. Draw Gier Path (Processed Data) if Available
+    # # =========================================================================
+    # if "Gier" in df.columns and df["Gier"].notna().any():
+    #     gier_path_fg = folium.FeatureGroup(name="Yaw Rate Path (Gier)", show=False)
+    #     gier_min_proc = df["Gier"].min()
+    #     gier_max_proc = df["Gier"].max()
+    #     gier_abs_max_proc = max(abs(gier_min_proc), abs(gier_max_proc))
+    #     proc_gier_min, proc_gier_max = -gier_abs_max_proc, gier_abs_max_proc
+    #     proc_gier_norm = mcolors.Normalize(vmin=proc_gier_min, vmax=proc_gier_max)
+    #     proc_gier_cmap = plt.get_cmap("bwr")
+    #
+    #     for i in range(len(df) - 1):
+    #         lat1 = lat_vals.iloc[i]
+    #         lon1 = lon_vals.iloc[i]
+    #         lat2 = lat_vals.iloc[i + 1]
+    #         lon2 = lon_vals.iloc[i + 1]
+    #         gier_val = df.iloc[i]["Gier"]
+    #         gier_color = mcolors.to_hex(proc_gier_cmap(proc_gier_norm(gier_val)))
+    #         folium.PolyLine(
+    #             locations=[(lat1, lon1), (lat2, lon2)],
+    #             color=gier_color,
+    #             weight=10,
+    #             opacity=1
+    #         ).add_to(gier_path_fg)
+    #     gier_path_fg.add_to(m)
+    #
+    #     proc_gier_color_steps = np.linspace(proc_gier_min, proc_gier_max, num=100)
+    #     proc_gier_color_list = [mcolors.to_hex(proc_gier_cmap(proc_gier_norm(v))) for v in proc_gier_color_steps]
+    #     proc_gier_colormap = LinearColormap(
+    #         colors=proc_gier_color_list,
+    #         vmin=proc_gier_min,
+    #         vmax=proc_gier_max,
+    #         caption="Yaw Rate (Gier)"
+    #     )
+    #     proc_gier_colormap.add_to(m)
 
-        for i in range(len(gdf) - 1):
-            lat1, lon1 = get_lat_lon(gdf.iloc[i])
-            lat2, lon2 = get_lat_lon(gdf.iloc[i + 1])
-            gier_val = gdf.iloc[i]["Gier"]
-            gier_color = colors.to_hex(gier_cmap(gier_norm(gier_val)))
-
-            folium.PolyLine(
-                [(lat1, lon1), (lat2, lon2)],
-                color=gier_color,
-                weight=10,
-                opacity=1
-            ).add_to(gier_path_fg)
-
-        gier_path_fg.add_to(m)
-
-        gier_color_steps = np.linspace(gier_min, gier_max, num=100)
-        gier_color_list = [colors.to_hex(gier_cmap(gier_norm(v))) for v in gier_color_steps]
-        gier_colormap = LinearColormap(
-            colors=gier_color_list,
-            vmin=gier_min,
-            vmax=gier_max,
-            caption="Yaw Rate (Gier)"
-        )
-        gier_colormap.add_to(m)
-
-    # -------------------------------------------------------------------------
-    # 9. Yaw Rate Path (Optional)
-    # -------------------------------------------------------------------------
+    # =================================================================================
+    # 10. Draw Yaw Rate Path (From Heading) if Available
+    # =================================================================================
     yaw_rate_col = "yaw_rate_deg_s"
-    if yaw_rate_col in gdf.columns and gdf[yaw_rate_col].notna().any():
-        yaw_path_fg = folium.FeatureGroup(name="Yaw Rate (from heading)", show=False)
-        yaw_min, yaw_max = gdf[yaw_rate_col].min(), gdf[yaw_rate_col].max()
-        yaw_abs_max = max(abs(yaw_min), abs(yaw_max))
-        yaw_min, yaw_max = -yaw_abs_max, yaw_abs_max
-        yaw_norm = colors.Normalize(vmin=yaw_min, vmax=yaw_max)
-        yaw_cmap = colormaps.get_cmap("coolwarm")
+    if yaw_rate_col in df.columns and df[yaw_rate_col].notna().any():
+        print("doing it")
+        yaw_path_fg = folium.FeatureGroup(name="Yaw Rate from GPS", show=False)
 
-        for i in range(len(gdf) - 1):
-            lat1, lon1 = get_lat_lon(gdf.iloc[i])
-            lat2, lon2 = get_lat_lon(gdf.iloc[i + 1])
-            yaw_val = gdf.iloc[i][yaw_rate_col]
-            yaw_color = colors.to_hex(yaw_cmap(yaw_norm(yaw_val)))
+        if color_scheme_gier:
+            # Use Gier's color scheme
+            yaw_norm = color_scheme_gier["norm"]
+            yaw_cmap = color_scheme_gier["cmap"]
+            yaw_vmin = color_scheme_gier["vmin"]
+            yaw_vmax = color_scheme_gier["vmax"]
+        else:
+            # Compute Yaw Rate scale separately
+            yaw_min = df[yaw_rate_col].min()
+            yaw_max = df[yaw_rate_col].max()
+            yaw_abs_max = max(abs(yaw_min), abs(yaw_max))
+            yaw_vmin, yaw_vmax = -yaw_abs_max, yaw_abs_max
+            yaw_norm = mcolors.Normalize(vmin=yaw_vmin, vmax=yaw_vmax)
+            yaw_cmap = plt.get_cmap("RdBu")
+
+        for i in range(len(df) - 1):
+            lat1 = df.iloc[i]["GPS_lat"]
+            lon1 = df.iloc[i]["GPS_lon"]
+            lat2 = df.iloc[i + 1]["GPS_lat"]
+            lon2 = df.iloc[i + 1]["GPS_lon"]
+            yaw_value = df.iloc[i][yaw_rate_col]
+
+            # --- Assign black color if the value is outside the defined range ---
+            if yaw_value < yaw_vmin or yaw_value > yaw_vmax:
+                segment_color = "#FFFF00"  # Black for out-of-range values
+            else:
+                segment_color = mcolors.to_hex(yaw_cmap(yaw_norm(yaw_value)))
 
             folium.PolyLine(
-                [(lat1, lon1), (lat2, lon2)],
-                color=yaw_color,
+                locations=[(lat1, lon1), (lat2, lon2)],
+                color=segment_color,
                 weight=10,
                 opacity=1
             ).add_to(yaw_path_fg)
 
         yaw_path_fg.add_to(m)
 
-        yaw_color_steps = np.linspace(yaw_min, yaw_max, num=100)
-        yaw_color_list = [colors.to_hex(yaw_cmap(yaw_norm(v))) for v in yaw_color_steps]
-        yaw_colormap = LinearColormap(
-            colors=yaw_color_list,
-            vmin=yaw_min,
-            vmax=yaw_max,
-            caption="Yaw Rate (deg/s)"
-        )
-        yaw_colormap.add_to(m)
 
-    # -------------------------------------------------------------------------
-    # 10. Start & End Markers
-    # -------------------------------------------------------------------------
-    start_lat, start_lon = get_lat_lon(gdf.iloc[0])
-    end_lat, end_lon = get_lat_lon(gdf.iloc[-1])
 
+    # =========================================================================
+    # 11. Add Start & End Markers
+    # =========================================================================
+    start_lat = lat_vals.iloc[0]
+    start_lon = lon_vals.iloc[0]
+    end_lat = lat_vals.iloc[-1]
+    end_lon = lon_vals.iloc[-1]
     folium.Marker(
         location=(start_lat, start_lon),
         popup=f"Start Point<br>Date: {day_display}",
         icon=folium.Icon(color="green")
     ).add_to(m)
-
     folium.Marker(
         location=(end_lat, end_lon),
         popup=f"End Point<br>Date: {day_display}",
         icon=folium.Icon(color="red")
     ).add_to(m)
 
-    # -------------------------------------------------------------------------
-    # 11. Title Box
-    # -------------------------------------------------------------------------
-    if "selected_smoothing_method" in df.columns:
-        smoothing_method = df["selected_smoothing_method"].iloc[0]
-    else:
-        smoothing_method = "None"
-
-    if "min_distance" in df.columns:
-        min_distance = df["min_distance"].iloc[0]
-    else:
-        min_distance = "not applied"
-
+    # =========================================================================
+    # 12. Add Title Box Overlay
+    # =========================================================================
+    smoothing_method = df["selected_smoothing_method"].iloc[0] if "selected_smoothing_method" in df.columns else "None"
+    min_distance = df["min_distance"].iloc[0] if "min_distance" in df.columns else "not applied"
     title_html = f"""
         <div style="position: fixed; bottom: 10px; right: 10px; width: 160px; 
                     background-color: white; z-index: 9999; font-size: 16px; 
@@ -318,50 +408,12 @@ def generate_map_from_csv(subset_full_path: str) -> None:
     """
     m.get_root().html.add_child(folium.Element(title_html))
 
-    # -------------------------------------------------------------------------
-    # 12. Time-Animated Marker (Optional)
-    # -------------------------------------------------------------------------
-    features = []
-    for _, row in gdf.iterrows():
-        lat, lon = row.geometry.y, row.geometry.x
-        time_str = row["DatumZeit"].isoformat()
-        speed_val = row["Speed_kmh"] if has_speed else 0.0
-        popup_text = (f"<b>Time:</b> {row['DatumZeit']}<br>"
-                      f"<b>Speed:</b> {speed_val:.2f} km/h")
 
-        feature = {
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [lon, lat]},
-            "properties": {
-                "time": time_str,
-                "popup": popup_text,
-                "style": {"color": "black", "fillColor": "black"},
-                "icon": "circle"
-            }
-        }
-        features.append(feature)
 
-    if features:
-        geojson_data = {"type": "FeatureCollection", "features": features}
-        animated_marker = TimestampedGeoJson(
-            data=geojson_data,
-            transition_time=500,
-            loop=False,
-            auto_play=False,
-            add_last_point=True,
-            period="PT10S",
-            duration="PT1S"
-        )
-        animated_marker.add_to(m)
-
-    # -------------------------------------------------------------------------
-    # 13. Layer Control
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # 14. Add Layer Control and Save the Map
+    # =========================================================================
     folium.LayerControl(collapsed=False).add_to(m)
-
-    # -------------------------------------------------------------------------
-    # 14. Save the Map
-    # -------------------------------------------------------------------------
     output_file = os.path.join(
         base_dir,
         f"map_{day_display}_smoothing_{smoothing_method}.html"

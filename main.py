@@ -25,7 +25,7 @@ from data_tools import (
     data_delete_the_one_percent,
     data_compute_heading_from_ds,
     data_kalman_on_yaw_rate, data_particle_filter,
-    data_remove_gps_outliers_neighbors, data_rolling_windows_gps_data,
+    data_remove_gps_outliers, data_rolling_windows_gps_data,
 )
 from map_generator import generate_map_from_csv
 
@@ -401,6 +401,7 @@ def main(config: Dict[str, Any], subsets: List[str]) -> None:
 
             # Mapping der möglichen Schritte (Name im config -> (Funktion, suffix))
             processing_steps = [
+                ("remove_the_outliers", data_remove_gps_outliers, "outliers"),
                 ("filter_GPS_with_rolling_windows", data_rolling_windows_gps_data, "rollingW"),
                 ("smooth_gps_data_savitzky",  data_smooth_gps_savitzky,   "savitzky"),
                 ("smooth_gps_data_gaussian",  data_smooth_gps_gaussian,   "gaussian"),
@@ -412,7 +413,6 @@ def main(config: Dict[str, Any], subsets: List[str]) -> None:
                 ("compute_heading_from_ds",   data_compute_heading_from_ds, "headingDS" ),
                 ("compute_yaw_rate_from_heading", data_compute_yaw_rate_from_heading, "yawRate"),
                 ("use_kalman_on_yaw_rate",    data_kalman_on_yaw_rate, "kalman"),
-                ("remove_the_outliers",       data_remove_gps_outliers_neighbors, "outliers"),
                 ("delete_the_boundaries",    data_delete_the_one_percent, "delBoundaries"),
             ]
 
@@ -457,6 +457,7 @@ if __name__ == "__main__":
     # Voreinstellungen
     DEFAULT_CONFIG = {
         "statistics": False,
+        "remove_the_outliers": True,
         "filter_GPS_with_rolling_windows": True,
         "smooth_gps_data_savitzky": True,
         "smooth_gps_data_gaussian": True,
@@ -468,7 +469,6 @@ if __name__ == "__main__":
         "compute_heading_from_ds": True,
         "compute_yaw_rate_from_heading": True,
         "use_kalman_on_yaw_rate": True,
-        "remove_the_outliers": True,
         "delete_the_boundaries": True,
         "save_to_csv": True,
         "enable_statistics_on_save": True,  # bedeutet: csv_save ruft csv_get_statistics automatisch auf
@@ -495,7 +495,6 @@ if __name__ == "__main__":
         "acc_col_for_particule_filter": "Beschleunigung in m/s2",
         "lat_col": "GPS_lat",
         "lon_col": "GPS_lon",
-        "speed_threshold_stopped_rolling_windows": 0.5,
         "time_window_slow_rolling_windows": 5.0,
         "slow_speed_threshold_rolling_windows": 5.0,
         'time_rolling_window_mid': 2.0,
@@ -512,10 +511,21 @@ if __name__ == "__main__":
         "N_for_particule_filter": 1000,
         "threshold_for_outliers_removing": 0.005,
         "min_distance": min_distance,
-        # Die neuen Prozent-Werte zum Filtern (1% links und 1% rechts)
         "delete_lower_bound_percentage": delete_lower_percentage,
         "delete_upper_bound_percentage": delete_upper_percentage,
-        # Steps aus dem GUI
+
+        #for the rolling window
+        "speed_threshold_stopped_rolling_windows": 0.5,
+        "distance_window_meters" : 10,
+        "time_window_min": 1.0,
+        "time_window_max": 300.0,
+
+        # for the remove outliers fonction
+        "speed_threshold_outliers" : 2,
+        "dbscan_eps" : 10,
+        "min_samples" : 3,
+
+
         **selected_steps
     }
 

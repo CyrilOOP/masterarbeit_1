@@ -1,6 +1,10 @@
 import tkinter as tk
 from tkinter import ttk
 from typing import Dict, Any, Optional  # Add this line to fix the error
+
+from geopy.distance import geodesic
+from sklearn.cluster import DBSCAN
+
 from csv_tools import  csv_select_gps_columns
 import numpy as np
 import pandas as pd
@@ -534,65 +538,96 @@ def data_particle_filter(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataFra
 
     return df
 
+import numpy as np
+import pandas as pd
+from sklearn.cluster import DBSCAN
 
-def data_remove_gps_outliers_neighbors(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataFrame:
+def data_remove_gps_outliers(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
-    Remove GPS outliers by comparing each point to the average of its preceding and following points.
-    A row is removed if its latitude or longitude deviates from the neighbor average by more than
-    a specified threshold.
+    Cleans GPS data by removing outliers based on unrealistic speed values
+    and DBSCAN clustering.
 
-    The function uses a helper (csv_select_gps_columns) to select the GPS columns (raw or preprocessed).
-    The threshold is retrieved from the config (key "threshold_for_outliers_removing") and is assumed
-    to be in the same unit as the GPS coordinates (typically degrees).
+    Parameters:
+        df (pd.DataFrame): DataFrame with columns containing GPS coordinates and timestamps.
+        config (dict): Configuration dictionary with parameters:
+            - "speed_threshold_outliers": Maximum allowed speed in m/s before considering a point an outlier.
+            - "dbscan_eps": Clustering radius in meters for DBSCAN.
+            - "min_samples": Minimum number of samples in a cluster for DBSCAN.
+            - "date_column": The column name of the timestamp.
 
-    The input DataFrame is modified in place (the outlier rows and helper columns are dropped),
-    and the same DataFrame object is returned.
+    Returns:
+        pd.DataFrame: Cleaned GPS data with outliers removed.
     """
-    # Choose the GPS columns using the helper.
-    lat_input, lon_input = csv_select_gps_columns(
+
+    # Retrieve threshold values from config
+    speed_threshold = config["speed_threshold_outliers"]
+    dbscan_eps = config["dbscan_eps"]
+    min_samples = config["min_samples"]
+
+    # -- 1. Ask user to select GPS columns
+    lat_col, lon_col = csv_select_gps_columns(
         df,
-        title="Select GPS Data for Outlier Removal",
-        prompt="Select the GPS data to use for outlier removal:"
-    )
-    print(f"Using input columns: {lat_input} and {lon_input}")
-
-    # Retrieve threshold from config, with a default if not provided.
-    threshold = float(config.get("threshold_for_outliers_removing", 0.0005))
-
-    # Compute the neighbor columns using shift.
-    df['lat_prev'] = df[lat_input].shift(1)
-    df['lat_next'] = df[lat_input].shift(-1)
-    df['lon_prev'] = df[lon_input].shift(1)
-    df['lon_next'] = df[lon_input].shift(-1)
-
-    # Compute the average of the neighboring points.
-    df['lat_neighbor_avg'] = (df['lat_prev'] + df['lat_next']) / 2
-    df['lon_neighbor_avg'] = (df['lon_prev'] + df['lon_next']) / 2
-
-    # Compute absolute differences.
-    df['lat_diff'] = abs(df[lat_input] - df['lat_neighbor_avg'])
-    df['lon_diff'] = abs(df[lon_input] - df['lon_neighbor_avg'])
-
-    # Create a mask that keeps rows where both differences are within the threshold.
-    # Rows with NaN differences (typically the first and last rows) are kept.
-    mask = (
-            ((df['lat_diff'] <= threshold) | df['lat_diff'].isna()) &
-            ((df['lon_diff'] <= threshold) | df['lon_diff'].isna())
+        title="Select GPS Data for outliers",
+        prompt="Select the GPS data to use as input for outliers:"
     )
 
-    # Determine which rows to drop.
-    rows_to_drop = df.index[~mask]
-    df.drop(rows_to_drop, inplace=True)
+    # -- 2. Convert datetime column to UNIX timestamps (seconds)
+    date_col = config["date_column"]
+    df[date_col] = pd.to_datetime(df[date_col], format="%Y-%m-%d %H:%M:%S.%f")
+    df["timestamp_unix"] = df[date_col].astype(np.int64) / 1e9  # Convert to seconds
 
-    # Optionally, drop the helper columns.
-    df.drop(
-        columns=['lat_prev', 'lat_next', 'lon_prev', 'lon_next',
-                 'lat_neighbor_avg', 'lon_neighbor_avg', 'lat_diff', 'lon_diff'],
-        inplace=True
-    )
+    # Sort DataFrame by time if not already sorted (important for speed calculations)
+    df.sort_values(by=date_col, inplace=True)
+    df.reset_index(drop=True, inplace=True)
 
-    print(f"Removed {len(rows_to_drop)} rows as outliers.")
-    return df
+    # -- 3. Calculate Haversine distance between consecutive points
+    lat1 = np.radians(df[lat_col].shift(0))
+    lon1 = np.radians(df[lon_col].shift(0))
+    lat2 = np.radians(df[lat_col].shift(1))
+    lon2 = np.radians(df[lon_col].shift(1))
+
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = (np.sin(dlat / 2) ** 2 +
+         np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2)
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+    distances = 6371000 * c  # Earth radius in meters
+
+    # -- 4. Calculate time differences
+    time_diffs = df["timestamp_unix"].shift(1) - df["timestamp_unix"]
+
+    # -- 5. Calculate speed (m/s), avoid division by zero
+    # Shift forward so each row's "speed" is how fast we got FROM the previous point TO current row
+    df["speed"] = distances / np.where(time_diffs > 0, time_diffs, np.inf)
+
+    # -- 6. Filter rows exceeding the speed threshold
+    df = df[df["speed"] < speed_threshold].copy()
+
+    if df.empty:
+        print("Warning: No data left after speed filtering. Returning empty DataFrame.")
+        return df
+
+    # -- 7. Apply DBSCAN clustering
+    # Convert lat/lon to radians for DBSCAN or keep degrees and
+    # adjust eps to match degrees. We'll keep using meters-based conversion:
+    coords = df[[lat_col, lon_col]].values
+    # Note: 1 degree ~ 111 km, so we convert dbscan_eps in meters to "degrees":
+    eps_in_degrees = dbscan_eps / 111000.0
+
+    clustering = DBSCAN(
+        eps=eps_in_degrees,
+        min_samples=min_samples,
+        metric="euclidean"
+    ).fit(coords)
+
+    # DBSCAN assigns outliers the label -1
+    df["cluster"] = clustering.labels_
+
+    # -- 8. Keep only points with cluster != -1
+    df = df[df["cluster"] != -1].copy()
+
+    # -- 9. Clean up columns and return
+    return df.drop(columns=["speed", "cluster", "timestamp_unix"])
 
 
 def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFrame:
@@ -600,34 +635,32 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
     Reduce the DataFrame row count by grouping:
       1) All consecutive 'stopped' points (speed < threshold) into ONE row
       2) Moving points in a speed-dependent time window
-    and return a NEW DataFrame with fewer rows.
+         (time_window = distance_window / speed, clamped between optional min/max)
 
-    In each group/window, we compute the average lat/lon (and optionally speed, time),
+    For each group/window, we compute the average lat/lon (and optionally speed),
     then store them in new columns:
        - "GPS_lat_smoothed_rolling_windows"
        - "GPS_lon_smoothed_rolling_windows"
 
     We keep the OTHER columns from the FIRST row in that group,
-    so you still have all original columns (like 'DatumZeit', etc.)
-    but fewer total rows in the final output.
+    so you still have all original columns but fewer total rows in the final output.
 
     Parameters
     ----------
     df : pd.DataFrame
         Must include:
-            - A numeric time column (e.g. 'time_numeric') in ascending order
-              (or we convert/sort by it below).
+            - A datetime column (config["date_column"], default "DatumZeit").
             - A speed column (named config["speed_column"] or default "speed").
-        We will also select which lat/lon columns to use via csv_select_gps_columns.
+        We also select lat/lon columns via csv_select_gps_columns (stubbed here).
     config : dict
         Expects keys:
-          "speed_threshold_stopped": float (below => train is stopped)
-          "time_window_slow": float (seconds if speed < slow_speed_threshold)
-          "slow_speed_threshold": float
-          "time_window_mid": float (seconds if slow_speed_threshold <= speed < mid_speed_threshold)
-          "mid_speed_threshold": float
-          "time_window_fast": float (if speed >= mid_speed_threshold)
-          "speed_column": str (name of speed column; default "speed" if missing)
+          "speed_threshold_stopped_rolling_windows": float
+          "distance_window_meters": float
+          "time_window_min": float (optional)
+          "time_window_max": float (optional)
+          "speed_column": str
+          "date_column": str (optional, default "DatumZeit")
+          ... plus any other keys for controlling the behavior.
 
     Returns
     -------
@@ -635,68 +668,72 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
         A new DataFrame with:
           - FEWER rows: 1 row per group/window
           - All original columns from the FIRST row of each group
-          - 2 extra columns: "GPS_lat_smoothed_rolling_windows", "GPS_lon_smoothed_rolling_windows"
+          - 2 extra columns:
+              "GPS_lat_smoothed_rolling_windows",
+              "GPS_lon_smoothed_rolling_windows"
             containing the group-average lat/lon.
-        The 'time_numeric' in each row can also be set to the midpoint of that window (shown below).
+        The 'time_numeric' in each row is set to the midpoint of that window.
     """
-    # -------------------------------------------------------------------------
-    # 0. Possibly your own function to pick lat/lon columns
-    # -------------------------------------------------------------------------
-    gps_lat_col, gps_lon_col = csv_select_gps_columns(
+
+    lat_col_rol_win, lon_col_rol_win = csv_select_gps_columns(
         df,
         title="Select GPS Data for rolling windows",
         prompt="Select the GPS data to use as input for rolling windows:"
     )
-    print(f"Using GPS columns: {gps_lat_col} and {gps_lon_col}")
+    print(f"Using GPS columns: {lat_col_rol_win} and {lon_col_rol_win}")
 
-    # 1️⃣ Parse the datetime column to numeric timestamps
+    # 1. Parse datetime column -> numeric timestamps (in seconds)
     date_col = config.get("date_column", "DatumZeit")
     df[date_col] = pd.to_datetime(df[date_col], format="%Y-%m-%d %H:%M:%S.%f")
-    t_arr = df[date_col].astype(np.int64) / 1e9  # Convert to seconds (UNIX timestamp)
-
+    # Convert to UNIX timestamp (float seconds)
+    t_arr = df[date_col].astype(np.int64) / 1e9
 
     # -------------------------------------------------------------------------
-    # 2. Extract relevant arrays
+    # 2. Extract relevant arrays (lat, lon, speed)
     # -------------------------------------------------------------------------
-    lat_col = config.get("lat_col", "GPS_lat")
-    lon_col = config.get("lon_col", "GPS_lon")
-    lat_arr = df[lat_col].to_numpy(dtype=float)
-    lon_arr = df[lon_col].to_numpy(dtype=float)
+    lat_arr = df[lat_col_rol_win].to_numpy(dtype=float)
+    lon_arr = df[lon_col_rol_win].to_numpy(dtype=float)
 
-    speed_col = config.get("speed_column", "speed")
+    speed_col = config["speed_column"]
     spd_arr = df[speed_col].to_numpy(dtype=float)
 
     n = len(df)
 
     # -------------------------------------------------------------------------
-    # 3. Config thresholds
+    # 3. Config parameters
     # -------------------------------------------------------------------------
     speed_threshold_stopped = config["speed_threshold_stopped_rolling_windows"]
-    time_window_slow        = config["time_window_slow_rolling_windows"]
-    slow_speed_threshold    = config["slow_speed_threshold_rolling_windows"]
-    time_window_mid         = config["time_rolling_window_mid"]
-    mid_speed_threshold     = config["mid_speed_threshold_rolling_windows"]
-    time_window_fast        = config["time_rolling_window_fast"]
+    distance_window_meters = config["distance_window_meters"]
+    time_window_min = config["time_window_min"] # optional
+    time_window_max = config["time_window_max"]  # optional
 
-    # -------------------------------------------------------------------------
-    # 4. Helper to pick window length for moving (speed >= threshold)
-    # -------------------------------------------------------------------------
+    # Convert speed from e.g. km/h to m/s if needed:
+    # Here we assume speed is ALREADY in m/s.
+    # If it's in km/h, you'd do: spd_arr = spd_arr / 3.6
+
     def get_window_length(speed_value):
-        """Return a time window (in seconds). If speed < speed_threshold_stopped, return None (handled separately)."""
+        """
+        Return a time window (in seconds) based on a continuous function of speed:
+          time_window = distance_window / speed_value (clamped).
+
+        If speed < threshold_stopped, return None (we treat 'stopped' separately).
+        """
         if speed_value < speed_threshold_stopped:
-            return None  # we'll treat 'stopped' logic separately
-        elif speed_value < slow_speed_threshold:
-            return time_window_slow
-        elif speed_value < mid_speed_threshold:
-            return time_window_mid
-        else:
-            return time_window_fast
+            return None  # We'll handle stopped logic in main loop
+
+        speed_m_s = speed_value  # If needed: speed_value / 3.6 for km/h -> m/s
+
+        raw_window = distance_window_meters / (speed_m_s + 1e-6)
+        # Clamp extremes
+        wlen = max(time_window_min, min(time_window_max, raw_window))
+        return wlen
 
     # -------------------------------------------------------------------------
-    # 5. Main loop: group rows => store only ONE row per group
+    # 4. Main loop: group rows => store only ONE row per group
     # -------------------------------------------------------------------------
     grouped_rows = []
     i = 0
+
     while i < n:
         current_speed = spd_arr[i]
 
@@ -720,11 +757,9 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
             mean_spd = sum_spd / count
 
             # Create a NEW row from the FIRST row's data in this group
-            row_dict = df.iloc[i].to_dict()  # copy all original columns from the first row
-            # Optionally, use midpoint time:
+            row_dict = df.iloc[i].to_dict()  # copy original columns
             midpoint_time = 0.5 * (t_arr[i] + t_arr[j - 1])
-            row_dict["time_numeric"] = midpoint_time  # replace with group midpoint
-            # Replace the speed if you want the average speed
+            row_dict["time_numeric"] = midpoint_time
             row_dict[speed_col] = mean_spd
 
             # Add new columns for the smoothed lat/lon
@@ -734,17 +769,20 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
             grouped_rows.append(row_dict)
             i = j
 
-        # CASE B: MOVING => speed >= threshold => define a time window
+        # CASE B: MOVING => define a time window based on speed
         else:
             wlen = get_window_length(current_speed)
+            # If speed < threshold_stopped, wlen would be None,
+            # but we already handled that case above.
+
             window_end = t_arr[i] + wlen
 
             sum_lat = 0.0
             sum_lon = 0.0
             sum_spd = 0.0
             count = 0
-            j = i
 
+            j = i
             while j < n and t_arr[j] <= window_end:
                 sum_lat += lat_arr[j]
                 sum_lon += lon_arr[j]
@@ -769,8 +807,9 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
             i = j
 
     # -------------------------------------------------------------------------
-    # 6. Build a NEW DataFrame with fewer rows, but same columns + 2 new ones
+    # 5. Build a NEW DataFrame with fewer rows
     # -------------------------------------------------------------------------
     df_grouped = pd.DataFrame(grouped_rows)
 
     return df_grouped
+
