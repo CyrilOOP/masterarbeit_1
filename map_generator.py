@@ -9,6 +9,7 @@ from branca.colormap import LinearColormap
 from csv_tools import csv_load
 import tkinter as tk
 from tkinter import messagebox
+import requests
 
 def generate_map_from_csv(subset_full_path: str) -> None:
     """
@@ -105,6 +106,8 @@ def generate_map_from_csv(subset_full_path: str) -> None:
             overlay=True,
             show=layer_info["show"]
         ).add_to(m)
+
+
 
 #=================================================================================
 #Ask if raw orignal path is wanted
@@ -391,6 +394,38 @@ def generate_map_from_csv(subset_full_path: str) -> None:
         popup=f"End Point<br>Date: {day_display}",
         icon=folium.Icon(color="red")
     ).add_to(m)
+
+    # =========================================================================
+    # 11.1 Add Tunnel Start & End Markers Based on tunnel_status Column
+    # =========================================================================
+    # This section checks for a "tunnel_status" column in the DataFrame.
+    # For rows with a status like "Near tunnel X", we group by tunnel ID
+    # and mark the first occurrence (tunnel start) and the last occurrence (tunnel end).
+    if "tunnel_status" in df.columns:
+        tunnel_groups = {}
+        for idx, row in df.iterrows():
+            status = row["tunnel_status"]
+            if isinstance(status, str) and status.startswith("Near tunnel "):
+                tunnel_id = status.replace("Near tunnel ", "")
+                tunnel_groups.setdefault(tunnel_id, []).append(idx)
+        for tunnel_id, indices in tunnel_groups.items():
+            first_idx = indices[0]
+            last_idx = indices[-1]
+            start_lat_tunnel = df.iloc[first_idx]["GPS_lat"]
+            start_lon_tunnel = df.iloc[first_idx]["GPS_lon"]
+            end_lat_tunnel = df.iloc[last_idx]["GPS_lat"]
+            end_lon_tunnel = df.iloc[last_idx]["GPS_lon"]
+            folium.Marker(
+                location=(start_lat_tunnel, start_lon_tunnel),
+                popup=f"Tunnel {tunnel_id} Start",
+                icon=folium.Icon(color="blue", icon="play")
+            ).add_to(m)
+            folium.Marker(
+                location=(end_lat_tunnel, end_lon_tunnel),
+                popup=f"Tunnel {tunnel_id} End",
+                icon=folium.Icon(color="orange", icon="stop")
+            ).add_to(m)
+
 
     # =========================================================================
     # 12. Add Title Box Overlay

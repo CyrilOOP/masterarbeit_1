@@ -5,10 +5,14 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="4739339c-27c4-4b22-82f2-2728b5e3b650" name="Changes" comment="improved th rolling windows &#10;improved the map_generator, only one color scale, the rest is yellow">
+      <change afterPath="$PROJECT_DIR$/graph_curvature.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tunnel_identifier.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tunnel_identifier_vectorized.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/data_tools.py" beforeDir="false" afterPath="$PROJECT_DIR$/data_tools.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/yaw_rate_graph_test.py" beforeDir="false" afterPath="$PROJECT_DIR$/yaw_rate_graph_test.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/map_generator.py" beforeDir="false" afterPath="$PROJECT_DIR$/map_generator.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -50,48 +54,52 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python.bad_ass.executor&quot;: &quot;Run&quot;,
-    &quot;Python.csv_tools.executor&quot;: &quot;Run&quot;,
-    &quot;Python.data_tools.executor&quot;: &quot;Run&quot;,
-    &quot;Python.filter_gps_with_v_and_a.executor&quot;: &quot;Run&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;Python.remove_NAs.executor&quot;: &quot;Run&quot;,
-    &quot;Python.remove_stops.executor&quot;: &quot;Run&quot;,
-    &quot;Python.smoothing_methods_test.executor&quot;: &quot;Run&quot;,
-    &quot;Python.use_ORM_to_filter.executor&quot;: &quot;Run&quot;,
-    &quot;Python.yaw_rate_analyse.executor&quot;: &quot;Run&quot;,
-    &quot;Python.yaw_rate_graph_test.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/cyril/Desktop&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.keymap&quot;,
-    &quot;two.files.diff.last.used.file&quot;: &quot;C:/Users/cyril/PycharmProjects/Masterarbeit_1/main.py&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python.bad_ass.executor": "Run",
+    "Python.csv_tools.executor": "Run",
+    "Python.data_tools.executor": "Run",
+    "Python.filter_gps_with_v_and_a.executor": "Run",
+    "Python.graph_curvature.executor": "Run",
+    "Python.main.executor": "Run",
+    "Python.remove_NAs.executor": "Run",
+    "Python.remove_stops.executor": "Run",
+    "Python.smoothing_methods_test.executor": "Run",
+    "Python.test.executor": "Run",
+    "Python.tunnel_identifier.executor": "Run",
+    "Python.tunnel_identifier_vectorized.executor": "Run",
+    "Python.use_ORM_to_filter.executor": "Run",
+    "Python.yaw_rate_analyse.executor": "Run",
+    "Python.yaw_rate_graph_test.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "main",
+    "ignore.virus.scanning.warn.message": "true",
+    "last_opened_file_path": "C:/Users/cyril/Desktop",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "preferences.keymap",
+    "two.files.diff.last.used.file": "C:/Users/cyril/PycharmProjects/Masterarbeit_1/main.py",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\cyril\PycharmProjects\Masterarbeit_1" />
     </key>
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="C:\Users\cyril\PycharmProjects\Masterarbeit_1\subsets_by_date\2024-05-24" />
+      <recent name="C:\Users\cyril\PycharmProjects\Masterarbeit_1\subsets_by_date\2024-04-02" />
+      <recent name="C:\Users\cyril\PycharmProjects\Masterarbeit_1\subsets_by_date" />
       <recent name="C:\Users\cyril\PycharmProjects\Masterarbeit_1\subsets_by_date\2024-01-01" />
       <recent name="C:\Users\cyril\PycharmProjects\Masterarbeit_1" />
-      <recent name="C:\Users\cyril\PycharmProjects\Masterarbeit_1\subsets_by_date\2024-04-01" />
-      <recent name="C:\Users\cyril\PycharmProjects\Masterarbeit_1\subsets_by_date\2024-04-02" />
-      <recent name="C:\Users\cyril\PycharmProjects\Masterarbeit_1\subsets_by_date\2024-05-17" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.yaw_rate_graph_test">
-    <configuration name="bad_ass" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+  <component name="RunManager" selected="Python.test">
+    <configuration name="graph_curvature" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="Masterarbeit_1" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -105,30 +113,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/bad_ass.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration name="filter_gps_with_v_and_a" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="Masterarbeit_1" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/filter_gps_with_v_and_a.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/graph_curvature.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -160,7 +145,7 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="smoothing_methods_test" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="test" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="Masterarbeit_1" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -174,7 +159,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/smoothing_methods_test.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/test.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -183,7 +168,7 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="yaw_rate_graph_test" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="tunnel_identifier" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="Masterarbeit_1" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -197,7 +182,30 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/yaw_rate_graph_test.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tunnel_identifier.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="tunnel_identifier_vectorized" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="Masterarbeit_1" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tunnel_identifier_vectorized.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -208,11 +216,11 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Python.yaw_rate_graph_test" />
+        <item itemvalue="Python.test" />
         <item itemvalue="Python.main" />
-        <item itemvalue="Python.bad_ass" />
-        <item itemvalue="Python.smoothing_methods_test" />
-        <item itemvalue="Python.filter_gps_with_v_and_a" />
+        <item itemvalue="Python.tunnel_identifier_vectorized" />
+        <item itemvalue="Python.tunnel_identifier" />
+        <item itemvalue="Python.graph_curvature" />
       </list>
     </recent_temporary>
   </component>
@@ -245,7 +253,9 @@
       <workItem from="1738756548489" duration="13663000" />
       <workItem from="1738838962068" duration="15092000" />
       <workItem from="1739017895609" duration="12224000" />
-      <workItem from="1739035301097" duration="3303000" />
+      <workItem from="1739035301097" duration="4125000" />
+      <workItem from="1739040635544" duration="10681000" />
+      <workItem from="1739098197339" duration="9357000" />
     </task>
     <task id="LOCAL-00001" summary="26/01">
       <option name="closed" value="true" />
@@ -375,7 +385,15 @@
       <option name="project" value="LOCAL" />
       <updated>1739030541887</updated>
     </task>
-    <option name="localTasksCounter" value="17" />
+    <task id="LOCAL-00017" summary="improved th rolling windows &#10;improved the map_generator, only one color scale, the rest is yellow">
+      <option name="closed" value="true" />
+      <created>1739040019893</created>
+      <option name="number" value="00017" />
+      <option name="presentableId" value="LOCAL-00017" />
+      <option name="project" value="LOCAL" />
+      <updated>1739040019893</updated>
+    </task>
+    <option name="localTasksCounter" value="18" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -415,10 +433,14 @@
     <SUITE FILE_PATH="coverage/Masterarbeit_1$data_tools.coverage" NAME="data_tools Coverage Results" MODIFIED="1737901365096" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$csv_tools.coverage" NAME="csv_tools Coverage Results" MODIFIED="1738327591081" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$remove_stops.coverage" NAME="remove_stops Coverage Results" MODIFIED="1738354108656" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Masterarbeit_1$test.coverage" NAME="test Coverage Results" MODIFIED="1739108412262" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$yaw_rate_analyse.coverage" NAME="yaw_rate_analyse Coverage Results" MODIFIED="1737907209402" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/Masterarbeit_1$main.coverage" NAME="main Coverage Results" MODIFIED="1739037857400" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Masterarbeit_1$tunnel_identifier.coverage" NAME="tunnel_identifier Coverage Results" MODIFIED="1739106144809" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Masterarbeit_1$main.coverage" NAME="main Coverage Results" MODIFIED="1739107136861" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$smoothing_methods_test.coverage" NAME="smoothing_methods_test Coverage Results" MODIFIED="1738422621736" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$bad_ass.coverage" NAME="bad_ass Coverage Results" MODIFIED="1738855056672" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/Masterarbeit_1$yaw_rate_graph_test.coverage" NAME="yaw_rate_graph_test Coverage Results" MODIFIED="1739038620096" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Masterarbeit_1$tunnel_identifier_vectorized.coverage" NAME="tunnel_identifier_vectorized Coverage Results" MODIFIED="1739107131607" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Masterarbeit_1$graph_curvature.coverage" NAME="graph_curvature Coverage Results" MODIFIED="1739056636994" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Masterarbeit_1$yaw_rate_graph_test.coverage" NAME="yaw_rate_graph_test Coverage Results" MODIFIED="1739041492302" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>

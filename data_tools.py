@@ -2,9 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Dict, Any, Optional  # Add this line to fix the error
 
-from geopy.distance import geodesic
-from sklearn.cluster import DBSCAN
-
+from scipy.interpolate import splprep, splev
 from csv_tools import  csv_select_gps_columns
 import numpy as np
 import pandas as pd
@@ -809,3 +807,105 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
     df_grouped = pd.DataFrame(grouped_rows)
     return df_grouped
 
+
+def compute_spline_segment_distances(lat, lon, num_points=100):
+    """
+    Compute the traveled distance between consecutive GPS points
+    using cubic splines.
+
+    :param lat: Latitude array
+    :param lon: Longitude array
+    :param num_points: Number of points for spline evaluation (higher = more accurate)
+    :return: Array of distances for each consecutive point
+    """
+    if len(lat) < 2:
+        return np.array([])
+
+    # Convert lat/lon to Cartesian coordinates (approximate Mercator projection)
+    R = 6371000  # Earth radius in meters
+    x = np.radians(lon) * R * np.cos(np.radians(lat))  # Approximate x (longitude)
+    y = np.radians(lat) * R  # Approximate y (latitude)
+
+    # Fit a cubic spline through the x, y coordinates
+    tck, u = splprep([x, y], s=0)  # s=0 ensures strict interpolation
+
+    # Compute segment-wise distances
+    segment_distances = np.zeros(len(lat) - 1)
+
+    for i in range(len(lat) - 1):
+        # Generate fine-grained points **only for this segment**
+        unew = np.linspace(u[i], u[i + 1], num_points)
+        x_smooth, y_smooth = splev(unew, tck)
+
+        # Compute the traveled distance along the spline for this segment
+        dx = np.diff(x_smooth)
+        dy = np.diff(y_smooth)
+        segment_distances[i] = np.sum(np.sqrt(dx ** 2 + dy ** 2))
+
+    return segment_distances
+
+
+def data_compute_curvature(df, config):
+    """
+    Compute curvature from GPS data in two ways:
+    1) Using consecutive lat/lon and yaw differences (distance-based).
+    2) Using yaw_rate / speed directly.
+
+    :param df: Pandas DataFrame containing GPS data
+    :param config: Dict with column names for 'yaw', 'yaw_rate', 'speed'
+    :return: Modified df with new columns:
+             - 'distance_spline_segment'
+             - 'curvature_yaw_distance'
+             - 'curvature_yaw_rate'
+    """
+
+    # Select GPS columns
+    lat_col, lon_col = csv_select_gps_columns(
+        df,
+        title="Select GPS Data",
+        prompt="Select GPS columns for curvature calculation"
+    )
+
+    yaw_col = config["yaw"]  # e.g., 'yaw' in degrees
+    yaw_rate_col = config["yaw_rate"]  # e.g., 'yaw_rate' in deg/s
+    speed_col = config['speed']  # e.g., 'speed' in m/s
+
+    # 1) Compute the traveled distance along the curve for each segment
+    lat_vals = df[lat_col].values
+    lon_vals = df[lon_col].values
+
+    # Compute distances between consecutive points along the spline
+    ds = compute_spline_segment_distances(lat_vals, lon_vals)  # shape: (n-1,)
+
+    # Add the computed distances to the DataFrame
+    df['distance_spline_segment'] = np.append(ds, np.nan)
+
+    # Convert yaw from degrees -> radians and unwrap differences
+    yaw_deg = df[yaw_col].values
+    yaw_rad = np.radians(yaw_deg)
+    dtheta = np.diff(yaw_rad)  # shape: (n-1,)
+    dtheta = np.unwrap(dtheta)  # Avoid ±π jumps
+
+    # Compute curvature (dtheta / ds)
+    curvature_dist = np.zeros_like(ds)
+    mask = (ds != 0)
+    curvature_dist[mask] = dtheta[mask] / ds[mask]
+
+    # Append NaN to align with DataFrame row count
+    df['curvature_yaw_distance'] = np.append(curvature_dist, np.nan)
+
+    # 2) Curvature from yaw_rate and speed
+    yaw_rate_deg_s = df[yaw_rate_col].values  # deg/s
+    speed_m_s = df[speed_col].values  # m/s
+
+    # Convert deg/s -> rad/s
+    yaw_rate_rad_s = yaw_rate_deg_s * (np.pi / 180.0)
+
+    # Avoid div-by-zero and invalid values
+    with np.errstate(divide='ignore', invalid='ignore'):
+        curvature_rate = yaw_rate_rad_s / speed_m_s
+        curvature_rate[~np.isfinite(curvature_rate)] = np.nan
+
+    df['curvature_yaw_rate'] = curvature_rate
+
+    return df

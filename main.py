@@ -25,7 +25,7 @@ from data_tools import (
     data_delete_the_one_percent,
     data_compute_heading_from_ds,
     data_kalman_on_yaw_rate, data_particle_filter,
-    data_remove_gps_outliers, data_rolling_windows_gps_data,
+    data_remove_gps_outliers, data_rolling_windows_gps_data, data_compute_curvature,
 )
 from map_generator import generate_map_from_csv
 
@@ -413,7 +413,8 @@ def main(config: Dict[str, Any], subsets: List[str]) -> None:
                 ("compute_heading_from_ds",   data_compute_heading_from_ds, "headingDS" ),
                 ("compute_yaw_rate_from_heading", data_compute_yaw_rate_from_heading, "yawRate"),
                 ("use_kalman_on_yaw_rate",    data_kalman_on_yaw_rate, "kalman"),
-                ("delete_the_boundaries",    data_delete_the_one_percent, "delBoundaries"),
+                ("delete_the_boundaries",     data_delete_the_one_percent, "delBoundaries"),
+                ("compute_curvature",         data_compute_curvature, "curvature"),
             ]
 
             processed_suffixes = []
@@ -468,6 +469,7 @@ if __name__ == "__main__":
         "compute_heading_from_xy": True,
         "compute_heading_from_ds": True,
         "compute_yaw_rate_from_heading": True,
+        "compute_curvature" : True,
         "use_kalman_on_yaw_rate": True,
         "delete_the_boundaries": True,
         "save_to_csv": True,
@@ -519,7 +521,10 @@ if __name__ == "__main__":
         "time_window_max": 300.0,
         "speed_bins": [0.0, 0.5, 5.0, 15.0, 30.0, float("inf")],
 
-
+        #for curvature
+        "yaw" : "heading_deg_ds",
+        "yaw_rate" : "yaw_rate_deg_s",
+        "speed" : "Geschwindigkeit in m/s",
 
         # for the remove outliers fonction
         "speed_threshold_outliers" : 2,
