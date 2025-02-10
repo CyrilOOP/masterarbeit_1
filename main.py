@@ -25,7 +25,10 @@ from data_tools import (
     data_delete_the_one_percent,
     data_compute_heading_from_ds,
     data_kalman_on_yaw_rate, data_particle_filter,
-    data_remove_gps_outliers, data_rolling_windows_gps_data, data_compute_curvature,
+    data_remove_gps_outliers,
+    data_rolling_windows_gps_data,
+    data_compute_curvature,
+    data_add_infrastructure_status,
 )
 from map_generator import generate_map_from_csv
 
@@ -415,6 +418,7 @@ def main(config: Dict[str, Any], subsets: List[str]) -> None:
                 ("use_kalman_on_yaw_rate",    data_kalman_on_yaw_rate, "kalman"),
                 ("delete_the_boundaries",     data_delete_the_one_percent, "delBoundaries"),
                 ("compute_curvature",         data_compute_curvature, "curvature"),
+                ("infrastructure_identifier",         data_add_infrastructure_status, "infra"),
             ]
 
             processed_suffixes = []
@@ -472,6 +476,7 @@ if __name__ == "__main__":
         "compute_curvature" : True,
         "use_kalman_on_yaw_rate": True,
         "delete_the_boundaries": True,
+        "infrastructure_identifier" : True,
         "save_to_csv": True,
         "enable_statistics_on_save": True,  # bedeutet: csv_save ruft csv_get_statistics automatisch auf
         "generate_map": False,
@@ -530,6 +535,14 @@ if __name__ == "__main__":
         "speed_threshold_outliers" : 2,
         "dbscan_eps" : 10,
         "min_samples" : 3,
+
+        #for the bridges and tunnels
+        "overpass_url": "https://overpass-api.de/api/interpreter",
+        "bbox": [47.2, 5.9, 55.1, 15.0],
+        "structure_threshold": 0.01,   # km: adjust based on your GPS quality
+        "bridge_file": "bridges.csv",
+        "tunnel_file" : "tunnels.csv",
+        "gps_quality_col" : "GPS Qualität",
 
 
         **selected_steps

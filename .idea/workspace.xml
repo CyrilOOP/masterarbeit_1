@@ -4,15 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="4739339c-27c4-4b22-82f2-2728b5e3b650" name="Changes" comment="improved th rolling windows &#10;improved the map_generator, only one color scale, the rest is yellow">
-      <change afterPath="$PROJECT_DIR$/graph_curvature.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tunnel_identifier.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tunnel_identifier_vectorized.py" afterDir="false" />
+    <list default="true" id="4739339c-27c4-4b22-82f2-2728b5e3b650" name="Changes" comment="working fine">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/data_tools.py" beforeDir="false" afterPath="$PROJECT_DIR$/data_tools.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/map_generator.py" beforeDir="false" afterPath="$PROJECT_DIR$/map_generator.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -98,7 +93,7 @@
       <recent name="C:\Users\cyril\PycharmProjects\Masterarbeit_1" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.test">
+  <component name="RunManager" selected="Python.main">
     <configuration name="graph_curvature" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="Masterarbeit_1" />
       <option name="ENV_FILES" value="" />
@@ -216,8 +211,8 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Python.test" />
         <item itemvalue="Python.main" />
+        <item itemvalue="Python.test" />
         <item itemvalue="Python.tunnel_identifier_vectorized" />
         <item itemvalue="Python.tunnel_identifier" />
         <item itemvalue="Python.graph_curvature" />
@@ -255,7 +250,7 @@
       <workItem from="1739017895609" duration="12224000" />
       <workItem from="1739035301097" duration="4125000" />
       <workItem from="1739040635544" duration="10681000" />
-      <workItem from="1739098197339" duration="9357000" />
+      <workItem from="1739098197339" duration="13634000" />
     </task>
     <task id="LOCAL-00001" summary="26/01">
       <option name="closed" value="true" />
@@ -393,7 +388,15 @@
       <option name="project" value="LOCAL" />
       <updated>1739040019893</updated>
     </task>
-    <option name="localTasksCounter" value="18" />
+    <task id="LOCAL-00018" summary="working fine">
+      <option name="closed" value="true" />
+      <created>1739109441117</created>
+      <option name="number" value="00018" />
+      <option name="presentableId" value="LOCAL-00018" />
+      <option name="project" value="LOCAL" />
+      <updated>1739109441119</updated>
+    </task>
+    <option name="localTasksCounter" value="19" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -423,7 +426,8 @@
     <MESSAGE value="before getting the helper function that ask which gps data" />
     <MESSAGE value="i change so many things, i dont know any-fucking-more" />
     <MESSAGE value="improved th rolling windows &#10;improved the map_generator, only one color scale, the rest is yellow" />
-    <option name="LAST_COMMIT_MESSAGE" value="improved th rolling windows &#10;improved the map_generator, only one color scale, the rest is yellow" />
+    <MESSAGE value="working fine" />
+    <option name="LAST_COMMIT_MESSAGE" value="working fine" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/Masterarbeit_1$use_ORM_to_filter.coverage" NAME="use_ORM_to_filter Coverage Results" MODIFIED="1738417525814" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
@@ -433,10 +437,10 @@
     <SUITE FILE_PATH="coverage/Masterarbeit_1$data_tools.coverage" NAME="data_tools Coverage Results" MODIFIED="1737901365096" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$csv_tools.coverage" NAME="csv_tools Coverage Results" MODIFIED="1738327591081" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$remove_stops.coverage" NAME="remove_stops Coverage Results" MODIFIED="1738354108656" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/Masterarbeit_1$test.coverage" NAME="test Coverage Results" MODIFIED="1739108412262" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Masterarbeit_1$test.coverage" NAME="test Coverage Results" MODIFIED="1739110884552" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$yaw_rate_analyse.coverage" NAME="yaw_rate_analyse Coverage Results" MODIFIED="1737907209402" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$tunnel_identifier.coverage" NAME="tunnel_identifier Coverage Results" MODIFIED="1739106144809" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/Masterarbeit_1$main.coverage" NAME="main Coverage Results" MODIFIED="1739107136861" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Masterarbeit_1$main.coverage" NAME="main Coverage Results" MODIFIED="1739112906916" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$smoothing_methods_test.coverage" NAME="smoothing_methods_test Coverage Results" MODIFIED="1738422621736" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$bad_ass.coverage" NAME="bad_ass Coverage Results" MODIFIED="1738855056672" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$tunnel_identifier_vectorized.coverage" NAME="tunnel_identifier_vectorized Coverage Results" MODIFIED="1739107131607" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />

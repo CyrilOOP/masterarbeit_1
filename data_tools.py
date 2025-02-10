@@ -1,8 +1,12 @@
+import os
 import tkinter as tk
 from tkinter import ttk
 from typing import Dict, Any, Optional  # Add this line to fix the error
 
+import requests
 from scipy.interpolate import splprep, splev
+from sklearn.neighbors import BallTree
+
 from csv_tools import  csv_select_gps_columns
 import numpy as np
 import pandas as pd
@@ -909,3 +913,176 @@ def data_compute_curvature(df, config):
     df['curvature_yaw_rate'] = curvature_rate
 
     return df
+
+
+# ------------------------------------------------------------------------------
+# data_fetch_tunnel_data: Fetches railway tunnel data from OSM using Overpass.
+# ------------------------------------------------------------------------------
+def data_fetch_tunnel_data(config: dict) -> pd.DataFrame:
+    bbox = config["bbox"]
+    overpass_url = config["overpass_url"]
+    query = f"""
+    [out:json];
+    (
+      way["railway"="rail"]["tunnel"="yes"]({bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]});
+    );
+    out body;
+    >;
+    out skel qt;
+    """
+    print("Fetching railway tunnels from OSM...")
+    response = requests.get(overpass_url, params={'data': query})
+    data = response.json()
+    print("Tunnel data received!")
+
+    ways = {el["id"]: el["nodes"] for el in data["elements"] if el["type"] == "way"}
+    nodes = {el["id"]: (el["lat"], el["lon"]) for el in data["elements"] if el["type"] == "node"}
+
+    tunnel_list = []
+    for way_id, node_ids in ways.items():
+        coords = [nodes[nid] for nid in node_ids if nid in nodes]
+        if len(coords) > 1:
+            tunnel_list.append({"structure_id": way_id, "structure_type": "tunnel", "coordinates": coords})
+
+    tunnel_df = pd.DataFrame(tunnel_list)
+    return tunnel_df
+
+
+# ------------------------------------------------------------------------------
+# data_fetch_bridge_data: Fetches railway bridge data from OSM using Overpass.
+# ------------------------------------------------------------------------------
+def data_fetch_bridge_data(config: dict) -> pd.DataFrame:
+    bbox = config["bbox"]
+    overpass_url = config["overpass_url"]
+    query = f"""
+    [out:json];
+    (
+      way["railway"="rail"]["bridge"="yes"]({bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]});
+    );
+    out body;
+    >;
+    out skel qt;
+    """
+    print("Fetching railway bridges from OSM...")
+    response = requests.get(overpass_url, params={'data': query})
+    data = response.json()
+    print("Bridge data received!")
+
+    ways = {el["id"]: el["nodes"] for el in data["elements"] if el["type"] == "way"}
+    nodes = {el["id"]: (el["lat"], el["lon"]) for el in data["elements"] if el["type"] == "node"}
+
+    bridge_list = []
+    for way_id, node_ids in ways.items():
+        coords = [nodes[nid] for nid in node_ids if nid in nodes]
+        if len(coords) > 1:
+            bridge_list.append({"structure_id": way_id, "structure_type": "bridge", "coordinates": coords})
+
+    bridge_df = pd.DataFrame(bridge_list)
+    return bridge_df
+
+
+# ------------------------------------------------------------------------------
+# data_add_structure_status: Annotates an input DataFrame with structure status,
+# using the "GPS Qualität" column.
+# ------------------------------------------------------------------------------
+def data_add_infrastructure_status(input_df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """
+    Annotates the input DataFrame with a new column "structure_status" based on the train's GPS data.
+
+    The config dict should include:
+      - "overpass_url": Overpass API URL.
+      - "bbox": Bounding box [min_lat, min_lon, max_lat, max_lon].
+      - "structure_threshold": Distance in km within which a train point is considered near a structure.
+      - "tunnel_file": Local file name for tunnel data (e.g., "tunnels.csv").
+      - "bridge_file": Local file name for bridge data (e.g., "bridges.csv").
+      - "gps_lat_col": Name of the latitude column in the train DataFrame.
+      - "gps_lon_col": Name of the longitude column in the train DataFrame.
+      - "gps_quality_col": Name of the column with GPS quality (e.g., "GPS Qualität").
+
+    For each train point:
+      - If the value in "GPS Qualität" is not 4, the function checks for nearby structure nodes (tunnels or bridges).
+          - If one is found, the status is set to "Encountered {structure_type} {structure_id}".
+          - If none is found, it is set to "No structure encountered".
+      - If "GPS Qualität" equals 4, the status is set to "GPS quality OK".
+
+    Returns the updated DataFrame.
+    """
+    # Load or fetch tunnel data.
+    tunnel_file = config.get("tunnel_file", "tunnels.csv")
+    if os.path.exists(tunnel_file):
+        print(f"Loading tunnel data from {tunnel_file} ...")
+        tunnels_df = pd.read_csv(tunnel_file, converters={"coordinates": eval})
+        print("Tunnel data loaded.")
+    else:
+        print("Tunnel file not found. Fetching tunnel data from OSM...")
+        tunnels_df = data_fetch_tunnel_data(config)
+        tunnels_df.to_csv(tunnel_file, index=False)
+        print(f"Tunnel data saved to {tunnel_file}.")
+
+    # Load or fetch bridge data.
+    bridge_file = config.get("bridge_file", "bridges.csv")
+    if os.path.exists(bridge_file):
+        print(f"Loading bridge data from {bridge_file} ...")
+        bridges_df = pd.read_csv(bridge_file, converters={"coordinates": eval})
+        print("Bridge data loaded.")
+    else:
+        print("Bridge file not found. Fetching bridge data from OSM...")
+        bridges_df = data_fetch_bridge_data(config)
+        bridges_df.to_csv(bridge_file, index=False)
+        print(f"Bridge data saved to {bridge_file}.")
+
+    # Combine tunnel and bridge data.
+    structures_df = pd.concat([tunnels_df, bridges_df], ignore_index=True)
+
+    # Prepare structure data for spatial querying.
+    all_structure_points = []
+    all_structure_ids = []
+    all_structure_types = []
+    for _, row in structures_df.iterrows():
+        for point in row["coordinates"]:
+            all_structure_points.append(point)
+            all_structure_ids.append(row["structure_id"])
+            all_structure_types.append(row["structure_type"])
+    all_structure_points = np.array(all_structure_points)
+    structure_points_rad = np.radians(all_structure_points)
+    tree = BallTree(structure_points_rad, metric='haversine')
+
+    # Prepare train data.
+    lat_col, lon_col = csv_select_gps_columns(
+        input_df,
+        title="Select GPS Data",
+        prompt="Select GPS columns for tunnels"
+    )
+    train_points = input_df[[lat_col, lon_col]].to_numpy()
+    train_points_rad = np.radians(train_points)
+
+    structure_threshold = config.get("structure_threshold", 0.01)  # km
+    earth_radius = 6371.0  # km
+    threshold_rad = structure_threshold / earth_radius
+
+    # Query the BallTree for nearby structure points.
+    indices = tree.query_radius(train_points_rad, r=threshold_rad)
+
+    quality_col = config.get("gps_quality_col", "GPS Qualität")
+    statuses = []
+    for i, idx_list in enumerate(indices):
+        try:
+            gps_quality = int(input_df.iloc[i][quality_col])
+        except (ValueError, TypeError):
+            gps_quality = None
+
+        if gps_quality is not None and gps_quality != 4:
+            if len(idx_list) > 0:
+                structure_id = all_structure_ids[idx_list[0]]
+                structure_type = all_structure_types[idx_list[0]]
+                status = f"Encountered {structure_type} {structure_id}"
+            else:
+                status = "No structure encountered"
+        else:
+            status = "GPS quality OK"
+        statuses.append(status)
+
+    input_df["structure_status"] = statuses
+    return input_df
+
+
