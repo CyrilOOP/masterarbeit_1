@@ -4,7 +4,7 @@ import matplotlib.dates as mdates
 import re
 
 # Load the CSV file
-file_path = "subsets_by_date/2024-04-02/2024-04-02_rollingW_planar_time_headingDS_yawRate.csv"
+file_path = "subsets_by_date/2024-04-02/2024-04-02_rollingW_planar_time_headingDS_yawRate_curvature.csv"
 file_path_raw = "subsets_by_date/2024-04-02/2024-04-02.csv"
 
 # Extract the date from the file path using regex

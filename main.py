@@ -1,16 +1,13 @@
 import sys
-import os
 from typing import Dict, List, Tuple, Any
 
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QListWidget, QLineEdit, QPushButton, QDoubleSpinBox, QMessageBox, QFileDialog,
-    QCheckBox, QGridLayout, QListWidgetItem, QFormLayout
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
+    QPushButton, QCheckBox, QLineEdit, QListWidget, QListWidgetItem,
+    QFormLayout, QDoubleSpinBox, QMessageBox, QFileDialog
 )
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QIcon
 
-# Importiere deine bestehenden CSV-/Daten-Funktionen
+
 from csv_tools import (
     csv_load, csv_save, csv_get_statistics, csv_group_by_date_and_save, subsets_by_date
 )
@@ -32,26 +29,43 @@ from data_tools import (
 )
 from map_generator import generate_map_from_csv
 
+import os
+from typing import Dict, List, Tuple
+
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFont, QIcon
+
+import pandas as pd  # For loading CSV files
+import graph_tools  # Your module that contains graph functions
+
+# Make sure that functions like 'plot_histogram', 'plot_line_chart', etc.
+# are defined in your graph_tools.py module.
 
 class DataProcessingApp(QMainWindow):
     """
     Das PyQt-basierte GUI-Fenster, das:
      - Die zu verarbeitenden Teildateien (Subsets) anzeigt und filtern lässt
      - Processing-Schritte auswählbar macht
-     - Min. Abstandswert (min_distance) und nun auch zwei Prozentwerte (untere und obere Grenze) erfassen lässt
+     - Min. Abstandswert (min_distance) und zwei Prozentwerte (untere und obere Grenze) erfassen lässt
+     - Graphing-Optionen anbietet, die per Checkboxen festgelegt werden
     """
     def __init__(self, default_config: Dict[str, bool], subset_folder: str, pre_selected_date: str = None):
+        # Define a dictionary mapping a human-readable graph type to the function name in graph_tools
+        self.available_graphs = {
+            "Yaw rate comparison": "graph_yaw_rate_and_gier",
+
+        }
         super().__init__()
         self.default_config = default_config
         self.subset_folder = subset_folder
         self.pre_selected_date = pre_selected_date
 
-        # Hier "zwischenspeichern", was im GUI ausgewählt wird
+        # Speicher für ausgewählte Optionen
         self.selected_steps: Dict[str, bool] = {}
         self.selected_subsets: List[str] = []
         self.min_distance: float = 1.0
 
-        # Neue Attribute für die Prozentangaben
+        # Prozentwerte
         self.delete_lower_percentage: float = 1.0   # Default: 1%
         self.delete_upper_percentage: float = 99.0  # Default: 99%
 
@@ -73,12 +87,15 @@ class DataProcessingApp(QMainWindow):
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget)
 
-        # Baue die GUI-Komponenten auf
+        # Bestehende Gruppen
         main_layout.addWidget(self.create_file_selection_group())
         main_layout.addWidget(self.create_processing_steps_group())
         main_layout.addWidget(self.create_distance_and_percentage_input_group())
         main_layout.addWidget(self.create_subsets_group())
         main_layout.addWidget(self.create_action_button())  # Start Processing
+
+        # Neue Gruppe: Graphing Options mit Checkboxen
+        main_layout.addWidget(self.create_graphs_group())
 
     def setup_style(self):
         """Setzt ein paar Styles mittels CSS-ähnlicher Syntax."""
@@ -119,8 +136,7 @@ class DataProcessingApp(QMainWindow):
         """)
 
     def create_file_selection_group(self) -> QWidget:
-        """Erzeugt den Bereich, in dem man über PyQt eine CSV-Datei auswählen kann,
-           um sie nach Datum zu unterteilen (csv_group_by_date_and_save)."""
+        """Erzeugt den Bereich, in dem man über PyQt eine CSV-Datei auswählen kann."""
         group = QWidget()
         layout = QVBoxLayout(group)
 
@@ -139,97 +155,82 @@ class DataProcessingApp(QMainWindow):
         layout.addWidget(QLabel("Processing Steps"), 0, 0, 1, 2)
 
         self.checkboxes = {}
-        # Wir filtern hier nur die Steps, die NICHT "create_subsets_by_date" heißen
-        steps = [(k, v) for k, v in self.default_config.items()
-                 if k != "create_subsets_by_date"]
+        # Filtert den Schritt "create_subsets_by_date" heraus
+        steps = [(k, v) for k, v in self.default_config.items() if k != "create_subsets_by_date"]
 
-        # Grid: 2 Spalten, so viele Zeilen wie nötig
         num_steps = len(steps)
         num_columns = 2
-        num_rows = (num_steps + num_columns - 1) // num_columns  # Ceiling division
+        num_rows = (num_steps + num_columns - 1) // num_columns
 
         for idx, (step_name, enabled) in enumerate(steps):
             checkbox = QCheckBox(step_name.replace("_", " ").title())
             checkbox.setChecked(enabled)
             self.checkboxes[step_name] = checkbox
-
-            # Reihen und Spalten berechnen
             row = idx % num_rows + 1  # +1 wegen der Überschriftszeile
             col = idx // num_rows
             layout.addWidget(checkbox, row, col)
 
-        # "Select All" / "Unselect All" Buttons unter den Checkboxen
+        # "Select All"/"Unselect All" Buttons
         btn_group = QWidget()
         btn_layout = QHBoxLayout(btn_group)
         btn_select_all = QPushButton("Select All")
         btn_select_all.clicked.connect(lambda: self.toggle_all_steps(True))
         btn_unselect_all = QPushButton("Unselect All")
         btn_unselect_all.clicked.connect(lambda: self.toggle_all_steps(False))
-
         btn_layout.addWidget(btn_select_all)
         btn_layout.addWidget(btn_unselect_all)
-
-        # Span across both columns
         layout.addWidget(btn_group, num_rows + 1, 0, 1, 2)
 
         return group
 
     def create_distance_and_percentage_input_group(self) -> QWidget:
         """
-        Creates an input area with a QFormLayout where each label is paired with its input field.
-        The QDoubleSpinBoxes are constrained in width to prevent them from stretching too wide.
-        This version uses custom styles for the labels to override the global QLabel stylesheet.
+        Erzeugt Eingabefelder für Mindestdistanz und Prozentwerte.
         """
         group = QWidget()
         form_layout = QFormLayout(group)
-        form_layout.setSpacing(8)  # Adjust spacing between rows as needed
+        form_layout.setSpacing(8)
 
-        # Define a custom style for our labels that we want to be smaller and not uppercase or bold.
-        # Note: Qt's QSS may not support text-transform. If that's the case, the text might still appear
-        # in uppercase because of the global rule. In that case, consider manually setting the text.
         label_style = "font-size: 14px; font-weight: normal; text-transform: none;"
 
-        # Minimum Distance row
+        # Mindestdistanz
         min_label = QLabel("Minimum Distance (meters):")
         min_label.setObjectName("smallLabel")
-
-        # Use an ID selector to override the global styling:
         min_label.setStyleSheet("#smallLabel { " + label_style + " }")
         self.distance_input = QDoubleSpinBox()
         self.distance_input.setRange(0.001, 1000.0)
         self.distance_input.setSingleStep(0.1)
         self.distance_input.setValue(self.min_distance)
-        self.distance_input.setMaximumWidth(100)  # Limit the width of the input
+        self.distance_input.setMaximumWidth(100)
         form_layout.addRow(min_label, self.distance_input)
 
-        # Delete Lower Boundary Percentage row
+        # Untere Prozentgrenze
         lower_label = QLabel("Delete Lower Boundary (%):")
         lower_label.setObjectName("smallLabelLower")
         lower_label.setStyleSheet("#smallLabelLower { " + label_style + " }")
         self.lower_percentage_input = QDoubleSpinBox()
         self.lower_percentage_input.setRange(0.0, 100.0)
         self.lower_percentage_input.setSingleStep(0.1)
-        self.lower_percentage_input.setValue(1.0)  # Default: 1%
-        self.lower_percentage_input.setMaximumWidth(100)  # Limit the width
+        self.lower_percentage_input.setValue(1.0)
+        self.lower_percentage_input.setMaximumWidth(100)
         form_layout.addRow(lower_label, self.lower_percentage_input)
 
-        # Delete Upper Boundary Percentage row
+        # Obere Prozentgrenze
         upper_label = QLabel("Delete Upper Boundary (%):")
         upper_label.setObjectName("smallLabelUpper")
         upper_label.setStyleSheet("#smallLabelUpper { " + label_style + " }")
         self.upper_percentage_input = QDoubleSpinBox()
         self.upper_percentage_input.setRange(0.0, 100.0)
         self.upper_percentage_input.setSingleStep(0.1)
-        self.upper_percentage_input.setValue(99.0)  # Default: 99%
-        self.upper_percentage_input.setMaximumWidth(100)  # Limit the width
+        self.upper_percentage_input.setValue(99.0)
+        self.upper_percentage_input.setMaximumWidth(100)
         form_layout.addRow(upper_label, self.upper_percentage_input)
 
         return group
 
     def create_subsets_group(self) -> QWidget:
         """
-        Dieser Bereich zeigt die vorhandenen Subset-Dateien
-        in der `subsets_by_date`-Struktur an und erlaubt Mehrfachauswahl.
+        Zeigt die vorhandenen Subset-Dateien an und erlaubt die Mehrfachauswahl.
         """
         group = QWidget()
         layout = QVBoxLayout(group)
@@ -241,7 +242,7 @@ class DataProcessingApp(QMainWindow):
         self.search_bar.textChanged.connect(self.filter_subsets)
         layout.addWidget(self.search_bar)
 
-        # Liste der verfügbaren Dateien
+        # Liste der Dateien
         self.subset_list = QListWidget()
         self.subset_list.setSelectionMode(QListWidget.ExtendedSelection)
         layout.addWidget(self.subset_list)
@@ -252,42 +253,61 @@ class DataProcessingApp(QMainWindow):
         """Button zum Starten des Verarbeitungsprozesses."""
         group = QWidget()
         layout = QHBoxLayout(group)
-
         self.btn_process = QPushButton("Start Processing")
         self.btn_process.setFont(QFont("Arial", 14, QFont.Bold))
         self.btn_process.clicked.connect(self.on_process)
         layout.addWidget(self.btn_process)
+        return group
+
+    def create_graphs_group(self) -> QWidget:
+        """
+        Neue Gruppe: Graphing Options.
+        Hier werden Checkboxen angeboten, die das jeweilige Graph-Tool in graph_tools.py ein-/ausschalten.
+        """
+        group = QWidget()
+        layout = QVBoxLayout(group)
+        layout.addWidget(QLabel("Graphing Options"))
+
+        # Erstelle Checkboxen für jeden Graph-Typ basierend auf self.available_graphs
+        self.graph_checkboxes = {}
+        for graph_name in self.available_graphs.keys():
+            cb = QCheckBox(graph_name)
+            cb.setChecked(False)  # Standardmäßig nicht ausgewählt
+            self.graph_checkboxes[graph_name] = cb
+            layout.addWidget(cb)
+
+        # Button, um die Graphen zu generieren
+        self.btn_generate_graphs = QPushButton("Generate Graphs")
+        self.btn_generate_graphs.setFont(QFont("Arial", 14, QFont.Bold))
+        self.btn_generate_graphs.clicked.connect(self.on_generate_graphs)
+        layout.addWidget(self.btn_generate_graphs)
 
         return group
 
     def toggle_all_steps(self, state: bool):
-        """Schaltet alle Häkchen an oder aus."""
+        """Schaltet alle Häkchen in den Processing-Schritten an oder aus."""
         for checkbox in self.checkboxes.values():
             checkbox.setChecked(state)
 
     def refresh_subsets(self):
         """
-        Liest die vorhandenen CSV-Dateien in `self.subset_folder`
-        (bspw. `subsets_by_date/YYYY-MM-DD/*.csv`) und zeigt sie in der Liste an.
+        Liest die vorhandenen CSV-Dateien im Ordner self.subset_folder und zeigt sie in der Liste an.
         """
-        self.subset_files = subsets_by_date(self.subset_folder)
+        # Hier musst du sicherstellen, dass die Funktion subsets_by_date definiert oder importiert ist.
+        self.subset_files = subsets_by_date(self.subset_folder)  # Beispiel: eine Liste von Dateipfaden
         self.subset_list.clear()
 
         for full_path in self.subset_files:
-            # Relativen Pfad ermitteln, um den Ordner-Namen in der GUI zu sehen
             rel_path = os.path.relpath(full_path, self.subset_folder)
-            item = QListWidgetItem(os.path.basename(rel_path))  # Nur der Dateiname
-            item.setData(Qt.UserRole, rel_path)  # Speichere den relativen Pfad
+            item = QListWidgetItem(os.path.basename(rel_path))
+            item.setData(Qt.UserRole, rel_path)
             self.subset_list.addItem(item)
 
         self.filter_subsets()
         self.select_preselected_date()
 
     def select_preselected_date(self):
-        """
-        Falls beim Erstellen dieses Fensters ein `pre_selected_date`
-        gegeben wurde, wird diese in der Liste gesucht und direkt markiert.
-        """
+        """Markiert automatisch das Subset, wenn pre_selected_date gesetzt ist."""
         if not self.pre_selected_date:
             return
 
@@ -299,7 +319,7 @@ class DataProcessingApp(QMainWindow):
                 break
 
     def filter_subsets(self):
-        """Versteckt alle Einträge, die nicht zum Suchstring passen."""
+        """Blendet Einträge aus, die nicht dem Suchstring entsprechen."""
         query = self.search_bar.text().lower()
         self.current_filter = query
 
@@ -309,8 +329,7 @@ class DataProcessingApp(QMainWindow):
 
     def on_select_file(self):
         """
-        Öffnet ein PyQt-FileDialog, um eine CSV zu wählen und per
-        `csv_group_by_date_and_save()` in dateibasierte Subsets aufzuteilen.
+        Öffnet einen FileDialog, um eine CSV-Datei auszuwählen und in subsets aufzuteilen.
         """
         path, _ = QFileDialog.getOpenFileName(
             self,
@@ -324,62 +343,90 @@ class DataProcessingApp(QMainWindow):
             return
 
         try:
-            # Hier übergeben wir den Pfad an csv_load. => Kein zweites Tk-Fenster.
-            df = csv_load(path)
+            df = csv_load(path)  # Stelle sicher, dass csv_load importiert oder definiert ist
             if df.empty:
                 raise ValueError("The chosen CSV file is empty.")
 
-            # Gruppiert und speichert die Splits in "subsets_by_date/<YYYY-MM-DD>"
-            # Standardmäßig wird der Name "DatumZeit" genutzt (siehe csv_tools.py).
-            csv_group_by_date_and_save(df, self.subset_folder)
-
-            # Liste im GUI aktualisieren
+            # Gruppiert und speichert die Splits in subsets_by_date/<YYYY-MM-DD>
+            csv_group_by_date_and_save(df, self.subset_folder)  # Auch diese Funktion muss vorhanden sein
             self.refresh_subsets()
             QMessageBox.information(self, "Success", "Subsets created successfully!")
-
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to process file:\n{str(e)}")
 
     def on_process(self):
         """
         Liest die eingestellten Optionen aus und schließt das Fenster,
-        damit im Hauptteil (unten) weitergemacht werden kann.
+        damit im Hauptteil weitergemacht werden kann.
         """
-        # Lese den min_distance und die neuen Prozent-Werte aus
         self.min_distance = self.distance_input.value()
         self.delete_lower_percentage = self.lower_percentage_input.value()
         self.delete_upper_percentage = self.upper_percentage_input.value()
 
         selected_items = self.subset_list.selectedItems()
-
         if not selected_items:
             QMessageBox.warning(self, "Warning", "Please select at least one subset!")
             return
 
-        # Welche Steps wurden angehakt?
-        self.selected_steps = {
-            name: cb.isChecked()
-            for name, cb in self.checkboxes.items()
-        }
-
-        # Baue die vollständigen Pfade (absolut) aus den relativen Pfaden
+        self.selected_steps = {name: cb.isChecked() for name, cb in self.checkboxes.items()}
         self.selected_subsets = [
             os.path.join(self.subset_folder, item.data(Qt.UserRole))
             for item in selected_items
         ]
 
-        # Fensterschluss
         self.close()
+
+    def on_generate_graphs(self):
+        """
+        Wird aufgerufen, wenn der "Generate Graphs"-Button geklickt wird.
+        Für jedes ausgewählte Subset wird das CSV geladen (z. B. via pandas),
+        und für jeden aktivierten Graph-Typ wird die entsprechende Funktion in graph_tools.py aufgerufen.
+        """
+        # Ermittele, welche Graph-Typen ausgewählt wurden
+        selected_graphs = [name for name, cb in self.graph_checkboxes.items() if cb.isChecked()]
+        if not selected_graphs:
+            QMessageBox.warning(self, "Warning", "Please select at least one graph type!")
+            return
+
+        # Retrieve the currently selected subset items directly from the list widget
+        selected_items = self.subset_list.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "Please select at least one subset from the list!")
+            return
+
+        # Build the list of subset file paths
+        selected_subsets = [
+            os.path.join(self.subset_folder, item.data(Qt.UserRole))
+            for item in selected_items
+        ]
+
+        # For each selected subset file, call the corresponding graphing function
+        for subset_file in selected_subsets:
+            for graph_type in selected_graphs:
+                func_name = self.available_graphs.get(graph_type)
+                if func_name:
+                    try:
+                        # Get the graphing function from graph_tools
+                        graph_func = getattr(graph_tools, func_name)
+                        # Call the function with the file path (or with data if your function is adjusted accordingly)
+                        graph_func(subset_file)
+                    except Exception as e:
+                        QMessageBox.critical(
+                            self, "Error",
+                            f"Error generating {graph_type} for {subset_file}:\n{str(e)}"
+                        )
+                        continue
+
+        QMessageBox.information(self, "Success", "Graphs generated successfully!")
 
     def get_results(self) -> Tuple[Dict[str, bool], List[str], float, float, float]:
         """
-        Gibt nach dem GUI-Lauf:
-         - das Dictionary mit den Schritten,
-         - die Liste der ausgewählten Subset-Pfade,
-         - die eingegebene Mindestdistanz,
+        Gibt nach dem GUI-Lauf die ausgewählten Optionen zurück:
+         - das Dictionary mit den Processing-Schritten,
+         - die Liste der Subset-Pfade,
+         - die Mindestdistanz,
          - den unteren Prozentwert,
-         - den oberen Prozentwert
-        zurück.
+         - den oberen Prozentwert.
         """
         return (self.selected_steps, self.selected_subsets,
                 self.min_distance, self.delete_lower_percentage, self.delete_upper_percentage)
@@ -524,7 +571,7 @@ if __name__ == "__main__":
         "distance_window_meters" : 10,
         "time_window_min": 1.0,
         "time_window_max": 300.0,
-        "speed_bins": [0.0, 0.5, 5.0, 15.0, 30.0, float("inf")],
+        "speed_bins": [0.0, 0.3, 5.0, 15.0, 30.0, float("inf")],
 
         #for curvature
         "yaw" : "heading_deg_ds",
