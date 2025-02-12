@@ -652,7 +652,7 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
     time_window_max = config["time_window_max"]
 
     # New: maximum stop window in seconds (3 minutes = 180 seconds)
-    max_stop_window = config.get("max_stop_window", 10)
+    max_stop_window = config.get("max_stop_window", 1800)
 
     # If config doesn't explicitly provide speed_bins,
     # we assume a simple 2-bin scenario: [0, threshold_stopped, ∞).

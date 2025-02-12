@@ -571,7 +571,7 @@ if __name__ == "__main__":
         "distance_window_meters" : 10,
         "time_window_min": 1.0,
         "time_window_max": 300.0,
-        "speed_bins": [0.0, 0.1,  5.0, 15.0, 30.0, float("inf")],
+        "speed_bins": [0.0, 0.5,  5.0, 15.0, 30.0, float("inf")],
 
         #for curvature
         "yaw" : "heading_deg_ds",
