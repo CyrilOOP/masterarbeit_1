@@ -5,11 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="4739339c-27c4-4b22-82f2-2728b5e3b650" name="Changes" comment="working fine">
-      <change afterPath="$PROJECT_DIR$/bridges_and_tunnels_try.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/graph_tools.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/Masterarbeit_1.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/Masterarbeit_1.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/yaw_rate_graph_test.py" beforeDir="false" afterPath="$PROJECT_DIR$/yaw_rate_graph_test.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -36,12 +33,12 @@
   <component name="GitHubPullRequestSearchHistory">{
   &quot;lastFilter&quot;: {}
 }</component>
-  <component name="GithubPullRequestsUISettings">{
-  &quot;selectedUrlAndAccountId&quot;: {
-    &quot;url&quot;: &quot;https://github.com/cyrilOOP/masterarbeit_1&quot;,
-    &quot;accountId&quot;: &quot;e85d0fe8-e7c1-43dd-87dc-e1da0c1c6977&quot;
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/CyrilOOP/masterarbeit_1.git",
+    "accountId": "a667f10b-de78-41ea-880d-4338ac50ce2d"
   }
-}</component>
+}]]></component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 1
 }</component>
@@ -51,39 +48,39 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Python.bad_ass.executor&quot;: &quot;Run&quot;,
-    &quot;Python.bridges_and_tunnels_try.executor&quot;: &quot;Run&quot;,
-    &quot;Python.csv_tools.executor&quot;: &quot;Run&quot;,
-    &quot;Python.data_tools.executor&quot;: &quot;Run&quot;,
-    &quot;Python.filter_gps_with_v_and_a.executor&quot;: &quot;Run&quot;,
-    &quot;Python.graph_curvature.executor&quot;: &quot;Run&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;Python.remove_NAs.executor&quot;: &quot;Run&quot;,
-    &quot;Python.remove_stops.executor&quot;: &quot;Run&quot;,
-    &quot;Python.smoothing_methods_test.executor&quot;: &quot;Run&quot;,
-    &quot;Python.test.executor&quot;: &quot;Run&quot;,
-    &quot;Python.tunnel_identifier.executor&quot;: &quot;Run&quot;,
-    &quot;Python.tunnel_identifier_vectorized.executor&quot;: &quot;Run&quot;,
-    &quot;Python.use_ORM_to_filter.executor&quot;: &quot;Run&quot;,
-    &quot;Python.yaw_rate_analyse.executor&quot;: &quot;Run&quot;,
-    &quot;Python.yaw_rate_graph_test.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
-    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/cyril/Desktop&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.keymap&quot;,
-    &quot;two.files.diff.last.used.file&quot;: &quot;C:/Users/cyril/PycharmProjects/Masterarbeit_1/main.py&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Python.bad_ass.executor": "Run",
+    "Python.bridges_and_tunnels_try.executor": "Run",
+    "Python.csv_tools.executor": "Run",
+    "Python.data_tools.executor": "Run",
+    "Python.filter_gps_with_v_and_a.executor": "Run",
+    "Python.graph_curvature.executor": "Run",
+    "Python.main.executor": "Run",
+    "Python.remove_NAs.executor": "Run",
+    "Python.remove_stops.executor": "Run",
+    "Python.smoothing_methods_test.executor": "Run",
+    "Python.test.executor": "Run",
+    "Python.tunnel_identifier.executor": "Run",
+    "Python.tunnel_identifier_vectorized.executor": "Run",
+    "Python.use_ORM_to_filter.executor": "Run",
+    "Python.yaw_rate_analyse.executor": "Run",
+    "Python.yaw_rate_graph_test.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "main",
+    "ignore.virus.scanning.warn.message": "true",
+    "last_opened_file_path": "C:/Users/piette/PycharmProjects/pythonProject/Karte_Teilnhemern",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable",
+    "two.files.diff.last.used.file": "C:/Users/cyril/PycharmProjects/Masterarbeit_1/main.py",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\cyril\PycharmProjects\Masterarbeit_1" />
@@ -225,8 +222,7 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-d6986cc7102b-e768b9ed790e-JavaScript-PY-243.21565.199" />
-        <option value="bundled-python-sdk-cab1f2013843-4ae2d6a61b08-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-243.21565.199" />
+        <option value="bundled-python-sdk-495700d161d3-aa17d162503b-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-243.22562.220" />
       </set>
     </attachedChunks>
   </component>

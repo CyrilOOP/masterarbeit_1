@@ -540,9 +540,6 @@ def data_particle_filter(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataFra
 
     return df
 
-import numpy as np
-import pandas as pd
-from sklearn.cluster import DBSCAN
 
 def data_remove_gps_outliers(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
@@ -631,12 +628,12 @@ def data_remove_gps_outliers(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     # -- 9. Clean up columns and return
     return df.drop(columns=["speed", "cluster", "timestamp_unix"])
 
-
 def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
       1) A speed-class break: if the speed class changes (e.g., from stopped to a different bin),
          we end the current group.
-      2) For "stopped" speed class: group consecutive rows until speed moves above threshold.
+      2) For "stopped" speed class: group consecutive rows until speed moves above threshold
+         or until a maximum stop time is reached.
       3) For "moving" speed classes: define a time window based on speed
          (time_window = distance_window / speed),
          but break early if speed crosses into a new class.
@@ -653,6 +650,9 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
     distance_window_meters = config["distance_window_meters"]
     time_window_min = config["time_window_min"]
     time_window_max = config["time_window_max"]
+
+    # New: maximum stop window in seconds (3 minutes = 180 seconds)
+    max_stop_window = config.get("max_stop_window", 10)
 
     # If config doesn't explicitly provide speed_bins,
     # we assume a simple 2-bin scenario: [0, threshold_stopped, ∞).
@@ -733,9 +733,13 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
 
             # Accumulate all consecutive rows that remain in class 0 (stopped)
             while j < n:
+                # Break if the speed class has changed.
                 if get_speed_class(spd_arr[j], speed_bins) != 0:
-                    # Speed class changed => break
                     break
+                # Break if the time elapsed exceeds the maximum stop window.
+                if (t_arr[j] - t_arr[i]) > max_stop_window:
+                    break
+
                 sum_lat += lat_arr[j]
                 sum_lon += lon_arr[j]
                 sum_spd += spd_arr[j]
@@ -764,8 +768,8 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
             wlen = get_window_length(initial_speed)
             if wlen is None:
                 # If for some reason it's None, that means speed < threshold (contradiction).
-                # We'll treat it as "stopped" or skip. But normally won't happen.
-                wlen = time_window_min  # fallback
+                # We'll treat it as "stopped" or use a fallback.
+                wlen = time_window_min
 
             window_end = t_arr[i] + wlen
 
@@ -810,7 +814,6 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
     # -------------------------------------------------------------------------
     df_grouped = pd.DataFrame(grouped_rows)
     return df_grouped
-
 
 def compute_spline_segment_distances(lat, lon, num_points=100):
     """
