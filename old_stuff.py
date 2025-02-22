@@ -30,40 +30,6 @@ import pyproj
 from typing import Dict
 
 
-import logging
-import sys
-
-# Create and configure the logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)  # Adjust the level as needed (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-
-# Optional: create a formatter with a certain format
-formatter = logging.Formatter(
-    fmt="%(asctime)s %(levelname)8s [%(name)s]: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
-)
-
-# Optional: log to console (stdout)
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(formatter)
-logger.addHandler(console_handler)
-
-# Optional: log to file
-# file_handler = logging.FileHandler("app.log")
-# file_handler.setFormatter(formatter)
-# logger.addHandler(file_handler)
-
-# Now anywhere in your code, you can do:
-#   from <your_module> import logger
-# and then
-#   logger.debug("Debug message")
-#   logger.info("Info message")
-#   logger.warning("Warning message")
-# etc.
-
-
-
-
 def data_convert_to_planar(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataFrame:
     """
     Convert latitude and longitude to planar coordinates (UTM).
@@ -104,6 +70,62 @@ def data_convert_to_planar(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataF
     return df
 
 
+def data_filter_points_by_distance(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Filter points by a minimum distance using columns and settings from config.
+
+    Args:
+        df: The input DataFrame containing coordinates.
+        config: Dictionary containing configuration values:
+            - "x_col": Column name for x-coordinates.
+            - "y_col": Column name for y-coordinates.
+            - "min_distance": Minimum distance to retain a point.
+
+    Returns:
+        Modified DataFrame with points spaced by at least the minimum distance
+        and a new column 'min_distance' indicating the distance used for filtering.
+
+    Raises:
+        ValueError: If required columns are missing or the DataFrame is empty.
+    """
+    x_col = config["x_col"]
+    y_col = config["y_col"]
+    min_distance = config.get("min_distance")
+
+    # Check if the DataFrame is empty
+    if df.empty:
+        return df
+
+    # Validate required columns
+    for col in [x_col, y_col]:
+        if col not in df.columns:
+            raise ValueError(
+                f"Missing column '{col}'. Ensure planar coordinates exist before calling this function."
+            )
+
+    # Extract coordinates as a NumPy array
+    coords = df[[x_col, y_col]].to_numpy()
+
+    # Initialize list of retained indices
+    retained_indices = [0]  # Always keep the first point
+    last_retained_point = coords[0]  # Start with the first point
+
+    # Iterate through the remaining points
+    for i in range(1, len(coords)):
+        distance = np.linalg.norm(coords[i] - last_retained_point)  # Distance to last retained point
+        if distance >= min_distance:
+            retained_indices.append(i)  # Retain the current point
+            last_retained_point = coords[i]  # Update the last retained point
+
+    # Filter the DataFrame
+    df = df.iloc[retained_indices].reset_index(drop=True)
+
+    # Add min_distance as a new column for all rows
+    df['min_distance'] = min_distance
+
+    return df
+
+
 def data_parse_time_and_compute_dt(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
     """
     Parse the given datetime column as pandas datetime and compute two time metrics:
@@ -133,6 +155,9 @@ def data_parse_time_and_compute_dt(df: pd.DataFrame, config: Dict[str, Any]) -> 
 
     # Create a column with time in seconds relative to the first timestamp
     df["elapsed_time_s"] = (df[datetime_col] - df[datetime_col].iloc[0]).dt.total_seconds()
+
+    # Compute the difference in timestamps between consecutive rows
+    df["delta_time_s"] = df[datetime_col].diff().dt.total_seconds()
 
     return df
 
@@ -311,12 +336,19 @@ def select_heading_columns_gui(heading_candidates):
     root.mainloop()
     return selected
 
+
+import pandas as pd
+from tkinter import messagebox
+
+
 def data_compute_yaw_rate_from_heading(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
     Compute yaw rate (in degrees/second) from heading column(s) in the DataFrame.
-    Uses a local variable for time deltas (instead of writing them to the DataFrame).
-    Yaw rate sign is fixed at 1 (positive).
+    Instead of using a pre-computed delta_time_s, this function derives the time delta
+    by diffing the 'elapsed_time_s' column.
     """
+    yaw_rate_sign = config.get("yaw_rate_sign", 1)
+
     # --- 1) Check if we have elapsed_time_s in df ---
     if "elapsed_time_s" not in df.columns:
         raise ValueError(
@@ -324,10 +356,10 @@ def data_compute_yaw_rate_from_heading(df: pd.DataFrame, config: dict) -> pd.Dat
             "cannot compute time deltas."
         )
 
-    # Calculate time deltas locally (no column added to df)
-    time_delta_s = df["elapsed_time_s"].diff()
+    # Create (or overwrite) a column for time delta by diffing elapsed_time_s
+    df["time_delta_s"] = df["elapsed_time_s"].diff()
     # Replace NaN or 0 with a tiny value to avoid division-by-zero
-    time_delta_s = time_delta_s.fillna(0).replace(0, 1e-6)
+    df["time_delta_s"] = df["time_delta_s"].fillna(0).replace(0, 1e-6)
 
     # --- 2) Find candidate heading columns (case-insensitive) ---
     heading_candidates = [col for col in df.columns if "heading" in col.lower()]
@@ -353,8 +385,8 @@ def data_compute_yaw_rate_from_heading(df: pd.DataFrame, config: dict) -> pd.Dat
         # Wrap heading differences to the range [-180, 180]
         heading_diff_wrapped = (heading_diff + 180) % 360 - 180
 
-        # Compute yaw rate = (wrapped difference) / (time delta)
-        yaw_rate = heading_diff_wrapped / time_delta_s
+        # Compute yaw rate = (wrapped difference) / (time delta) * yaw_rate_sign
+        yaw_rate = yaw_rate_sign * (heading_diff_wrapped / df["time_delta_s"])
 
         # Create a new column for the computed yaw rate
         new_col_name = f"yaw_rate_from_{heading_col}"
@@ -377,7 +409,6 @@ def data_compute_yaw_rate_from_heading(df: pd.DataFrame, config: dict) -> pd.Dat
             df = df.drop(indices_to_drop).reset_index(drop=True)
 
     return df
-
 
 
 def data_delete_the_one_percent(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataFrame:
@@ -461,6 +492,334 @@ def data_delete_the_one_percent(df: pd.DataFrame, config: Dict[str, str]) -> pd.
 
 
 
+def data_kalman_on_yaw_rate(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataFrame:
+    """
+    Apply a Kalman filter to smooth yaw rate values computed from GPS heading.
+
+    Args:
+        df: The DataFrame containing GPS-derived yaw rate.
+        config: Configuration dictionary with column names.
+
+    Returns:
+        The modified DataFrame with an additional column 'yaw_rate_smooth_gps'.
+    """
+    yaw_col = config.get("yaw_col_for_kalman")  # GPS-based yaw rate column
+
+    if yaw_col not in df.columns:
+        raise ValueError(f"Required column '{yaw_col}' not found in DataFrame.")
+
+    # Extract noisy yaw rate from GPS
+    measurements = df[yaw_col].values
+
+    # Kalman Filter Setup (assuming constant yaw rate model)
+    kf = KalmanFilter(
+        initial_state_mean=[measurements[0]],  # Start with first yaw rate value
+        initial_state_covariance=[1],  # Initial uncertainty
+        transition_matrices=[1],  # Yaw rate follows smooth transitions
+        observation_matrices=[1],  # Direct observation model
+        transition_covariance=[0.1],  # Process noise (adjustable)
+        observation_covariance=[2]  # Measurement noise (adjustable)
+    )
+
+    # Apply Kalman filter
+    smoothed_state_means, _ = kf.filter(measurements.reshape(-1, 1))
+
+    # Store smoothed yaw rate in DataFrame
+    df["yaw_rate_kalman"] = smoothed_state_means[:, 0]
+
+    return df
+
+
+# ============================================================================
+# Example Function 1: Savitzky–Golay Smoothing on GPS Data
+# ============================================================================
+def data_smooth_gps_savitzky(df: pd.DataFrame,
+                             smoothing_params: Optional[Dict[str, int]] = None) -> pd.DataFrame:
+    """
+    Apply a Savitzky–Golay filter to GPS data.
+
+    It first uses the helper `select_gps_columns` to determine which GPS columns to use.
+    The smoothed results are stored in new columns:
+        'GPS_lat_smoothed_savitzky' and 'GPS_lon_smoothed_savitzky'.
+
+    Args:
+        df: DataFrame containing GPS data.
+        smoothing_params: Optional dict to override default smoothing parameters
+                          (default: {"window_length": 51, "polyorder": 2})
+
+    Returns:
+        The modified DataFrame.
+    """
+    # Choose GPS columns (raw or preprocessed) via the helper.
+    lat_input, lon_input = csv_select_gps_columns(df,
+                                              title="Select GPS Data for Savitzky–Golay Smoothing",
+                                              prompt="Select the GPS data to use as input for Savitzky-Golay:")
+    print(f"Using input columns: {lat_input} and {lon_input}")
+
+    # Default smoothing parameters.
+    params = {"window_length": 51, "polyorder": 2}
+    if smoothing_params:
+        params.update(smoothing_params)
+
+    # Check that there is enough data for the chosen window_length.
+    if len(df[lat_input]) < params["window_length"]:
+        raise ValueError(f"Data length in {lat_input} is less than window_length ({params['window_length']}).")
+
+    # Apply the Savitzky–Golay filter.
+    df["GPS_lat_smoothed_savitzky"] = savgol_filter(df[lat_input], params["window_length"], params["polyorder"])
+    df["GPS_lon_smoothed_savitzky"] = savgol_filter(df[lon_input], params["window_length"], params["polyorder"])
+
+    print("Savitzky–Golay smoothing applied and saved as 'GPS_lat_smoothed_savitzky' and 'GPS_lon_smoothed_savitzky'.")
+    return df
+
+
+# ============================================================================
+# Example Function 2: Gaussian Smoothing on GPS Data
+# ============================================================================
+def data_smooth_gps_gaussian(df: pd.DataFrame,
+                             gaussian_params: Optional[Dict[str, float]] = None) -> pd.DataFrame:
+    """
+    Apply a Gaussian filter to GPS data.
+
+    It first uses the helper `select_gps_columns` to determine which GPS columns to use.
+    The smoothed results are stored in new columns:
+        'GPS_lat_smooth_gaussian' and 'GPS_lon_smooth_gaussian'.
+
+    Args:
+        df: DataFrame containing GPS data.
+        gaussian_params: Optional dict to override default Gaussian parameters
+                         (default: {"sigma": 2})
+
+    Returns:
+        The modified DataFrame.
+    """
+    # Choose GPS columns.
+    lat_input, lon_input = csv_select_gps_columns(df,
+                                              title="Select GPS Data for Gaussian Smoothing",
+                                              prompt="Select the GPS data to use as input for Gaussian:")
+    print(f"Using input columns: {lat_input} and {lon_input}")
+
+    # Default Gaussian parameters.
+    params = {"sigma": 2}
+    if gaussian_params:
+        params.update(gaussian_params)
+
+    # Apply the Gaussian filter.
+    df["GPS_lat_smoothed_gaussian"] = gaussian_filter1d(df[lat_input], sigma=params["sigma"])
+    df["GPS_lon_smoothed_gaussian"] = gaussian_filter1d(df[lon_input], sigma=params["sigma"])
+
+    print("Gaussian smoothing applied and saved as 'GPS_lat_smooth_gaussian' and 'GPS_lon_smooth_gaussian'.")
+    return df
+
+
+# ============================================================================
+# Example Function 3: Particle Filter using GPS, Speed, and Acceleration
+# ============================================================================
+def data_particle_filter(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataFrame:
+    """
+    Apply a particle filter using GPS data (latitude and longitude) along with speed and acceleration.
+
+    The function uses the helper `select_gps_columns` to choose the GPS columns.
+    It also gets the names of the speed and acceleration columns from the config.
+
+    The state vector at each time step is:
+          [latitude, longitude, speed, acceleration]
+
+    The filtered state estimates are added as new columns:
+          "pf_lat", "pf_lon", "pf_speed", "pf_acc".
+
+    The config dictionary may include:
+       - "speed_column": Name of the speed column.
+       - "acc_col_for_particule_filter": Name of the acceleration column.
+       - "N_for_particule_filter": Number of particles.
+       - Process and measurement noise parameters.
+
+    Returns:
+        The modified DataFrame.
+    """
+    # Choose GPS columns.
+    gps_lat_col, gps_lon_col = csv_select_gps_columns(df,
+                                                  title="Select GPS Data for Particle Filter",
+                                                  prompt="Select the GPS data to use as input for particule filter:")
+    print(f"Using GPS columns: {gps_lat_col} and {gps_lon_col}")
+
+    # Get speed and acceleration column names from config.
+    speed_col = config.get("speed_column")
+    acc_col = config.get("acc_col_for_particule_filter")
+    for col in [speed_col, acc_col]:
+        if col not in df.columns:
+            raise KeyError(f"Column '{col}' not found in the DataFrame.")
+
+    # Number of particles (ensure key name matches your config).
+    N = int(config.get("N_for_particule_filter"))
+
+    # Process noise standard deviations (for each state dimension).
+    process_std = np.array([
+        float(config.get("process_std_lat", 0.0001)),
+        float(config.get("process_std_lon", 0.0001)),
+        float(config.get("process_std_speed", 0.1)),
+        float(config.get("process_std_acc", 0.1))
+    ])
+
+    # Measurement noise standard deviations.
+    measurement_std = np.array([
+        float(config.get("measurement_std_lat", 0.0001)),
+        float(config.get("measurement_std_lon", 0.0001)),
+        float(config.get("measurement_std_speed", 0.1)),
+        float(config.get("measurement_std_acc", 0.1))
+    ])
+
+    # Build the observation matrix.
+    # Each observation: [lat, lon, speed, acceleration]
+    observations = df[[gps_lat_col, gps_lon_col, speed_col, acc_col]].values
+    T = observations.shape[0]
+    d = 4  # state dimension
+
+    # Initialize particles around the first observation.
+    init_obs = observations[0]
+    init_cov = np.diag((measurement_std ** 2) * 10)
+    try:
+        particles = np.random.multivariate_normal(mean=init_obs, cov=init_cov, size=N)
+    except np.linalg.LinAlgError:
+        particles = np.random.multivariate_normal(mean=init_obs, cov=np.eye(d) * 1e-6, size=N)
+    weights = np.ones(N) / N  # uniform initial weights
+
+    # Helper: Systematic resampling.
+    def systematic_resample(weights):
+        Np = len(weights)
+        positions = (np.arange(Np) + np.random.uniform()) / Np
+        indexes = np.zeros(Np, dtype=int)
+        cumulative_sum = np.cumsum(weights)
+        i, j = 0, 0
+        while i < Np:
+            if positions[i] < cumulative_sum[j]:
+                indexes[i] = j
+                i += 1
+            else:
+                j += 1
+        return indexes
+
+    # Particle filter loop.
+    filtered_states = []
+    for z in observations:
+        # Prediction: propagate particles with Gaussian process noise.
+        noise = np.random.normal(0, process_std, size=(N, d))
+        particles = particles + noise
+
+        # Update: compute likelihood for each particle given measurement z.
+        diff = particles - z
+        squared_error = np.sum((diff / measurement_std) ** 2, axis=1)
+        likelihood = np.exp(-0.5 * squared_error)
+        weights *= likelihood
+        weights += 1.e-300  # avoid numerical underflow
+        weights /= np.sum(weights)
+
+        # Resample particles.
+        indexes = systematic_resample(weights)
+        particles = particles[indexes]
+        weights = np.ones(N) / N  # reset weights
+
+        # Estimate: mean state from particles.
+        mean_state = np.mean(particles, axis=0)
+        filtered_states.append(mean_state)
+
+    filtered_states = np.array(filtered_states)  # shape (T, 4)
+
+    # Append the filtered state estimates as new columns.
+    df["GPS_lat_smoothed_particule"] = filtered_states[:, 0]
+    df["GPS_lon_smoothed_particule"] = filtered_states[:, 1]
+    df["pf_speed"] = filtered_states[:, 2]
+    df["pf_acc"] = filtered_states[:, 3]
+
+    return df
+
+
+def data_remove_gps_outliers(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """
+    Cleans GPS data by removing outliers based on unrealistic speed values
+    and DBSCAN clustering.
+
+    Parameters:
+        df (pd.DataFrame): DataFrame with columns containing GPS coordinates and timestamps.
+        config (dict): Configuration dictionary with parameters:
+            - "speed_threshold_outliers": Maximum allowed speed in m/s before considering a point an outlier.
+            - "dbscan_eps": Clustering radius in meters for DBSCAN.
+            - "min_samples": Minimum number of samples in a cluster for DBSCAN.
+            - "date_column": The column name of the timestamp.
+
+    Returns:
+        pd.DataFrame: Cleaned GPS data with outliers removed.
+    """
+
+    # Retrieve threshold values from config
+    speed_threshold = config["speed_threshold_outliers"]
+    dbscan_eps = config["dbscan_eps"]
+    min_samples = config["min_samples"]
+
+    # -- 1. Ask user to select GPS columns
+    lat_col, lon_col = csv_select_gps_columns(
+        df,
+        title="Select GPS Data for outliers",
+        prompt="Select the GPS data to use as input for outliers:"
+    )
+
+    # -- 2. Convert datetime column to UNIX timestamps (seconds)
+    date_col = config["date_column"]
+    df[date_col] = pd.to_datetime(df[date_col], format="%Y-%m-%d %H:%M:%S.%f")
+    df["timestamp_unix"] = df[date_col].astype(np.int64) / 1e9  # Convert to seconds
+
+    # Sort DataFrame by time if not already sorted (important for speed calculations)
+    df.sort_values(by=date_col, inplace=True)
+    df.reset_index(drop=True, inplace=True)
+
+    # -- 3. Calculate Haversine distance between consecutive points
+    lat1 = np.radians(df[lat_col].shift(0))
+    lon1 = np.radians(df[lon_col].shift(0))
+    lat2 = np.radians(df[lat_col].shift(1))
+    lon2 = np.radians(df[lon_col].shift(1))
+
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = (np.sin(dlat / 2) ** 2 +
+         np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2)
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+    distances = 6371000 * c  # Earth radius in meters
+
+    # -- 4. Calculate time differences
+    time_diffs = df["timestamp_unix"].shift(1) - df["timestamp_unix"]
+
+    # -- 5. Calculate speed (m/s), avoid division by zero
+    # Shift forward so each row's "speed" is how fast we got FROM the previous point TO current row
+    df["speed"] = distances / np.where(time_diffs > 0, time_diffs, np.inf)
+
+    # -- 6. Filter rows exceeding the speed threshold
+    df = df[df["speed"] < speed_threshold].copy()
+
+    if df.empty:
+        print("Warning: No data left after speed filtering. Returning empty DataFrame.")
+        return df
+
+    # -- 7. Apply DBSCAN clustering
+    # Convert lat/lon to radians for DBSCAN or keep degrees and
+    # adjust eps to match degrees. We'll keep using meters-based conversion:
+    coords = df[[lat_col, lon_col]].values
+    # Note: 1 degree ~ 111 km, so we convert dbscan_eps in meters to "degrees":
+    eps_in_degrees = dbscan_eps / 111000.0
+
+    clustering = DBSCAN(
+        eps=eps_in_degrees,
+        min_samples=min_samples,
+        metric="euclidean"
+    ).fit(coords)
+
+    # DBSCAN assigns outliers the label -1
+    df["cluster"] = clustering.labels_
+
+    # -- 8. Keep only points with cluster != -1
+    df = df[df["cluster"] != -1].copy()
+
+    # -- 9. Clean up columns and return
+    return df.drop(columns=["speed", "cluster", "timestamp_unix"])
 
 
 def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFrame:
@@ -652,6 +1011,289 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
     df_grouped = pd.DataFrame(grouped_rows)
     return df_grouped
 
+
+def compute_spline_segment_distances(lat, lon, num_points=100):
+    """
+    Compute the traveled distance between consecutive GPS points
+    using cubic splines.
+
+    :param lat: Latitude array
+    :param lon: Longitude array
+    :param num_points: Number of points for spline evaluation (higher = more accurate)
+    :return: Array of distances for each consecutive point
+    """
+    if len(lat) < 2:
+        return np.array([])
+
+    # Convert lat/lon to Cartesian coordinates (approximate Mercator projection)
+    R = 6371000  # Earth radius in meters
+    x = np.radians(lon) * R * np.cos(np.radians(lat))  # Approximate x (longitude)
+    y = np.radians(lat) * R  # Approximate y (latitude)
+
+    # Fit a cubic spline through the x, y coordinates
+    tck, u = splprep([x, y], s=0)  # s=0 ensures strict interpolation
+
+    # Compute segment-wise distances
+    segment_distances = np.zeros(len(lat) - 1)
+
+    for i in range(len(lat) - 1):
+        # Generate fine-grained points **only for this segment**
+        unew = np.linspace(u[i], u[i + 1], num_points)
+        x_smooth, y_smooth = splev(unew, tck)
+
+        # Compute the traveled distance along the spline for this segment
+        dx = np.diff(x_smooth)
+        dy = np.diff(y_smooth)
+        segment_distances[i] = np.sum(np.sqrt(dx ** 2 + dy ** 2))
+
+    return segment_distances
+
+
+def data_compute_curvature(df, config):
+    """
+    Compute curvature from GPS data in two ways:
+    1) Using consecutive lat/lon and yaw differences (distance-based).
+    2) Using yaw_rate / speed directly.
+
+    :param df: Pandas DataFrame containing GPS data
+    :param config: Dict with column names for 'yaw', 'yaw_rate', 'speed'
+    :return: Modified df with new columns:
+             - 'distance_spline_segment'
+             - 'curvature_yaw_distance'
+             - 'curvature_yaw_rate'
+    """
+
+    # Select GPS columns
+    lat_col, lon_col = csv_select_gps_columns(
+        df,
+        title="Select GPS Data",
+        prompt="Select GPS columns for curvature calculation"
+    )
+
+    yaw_col = config["yaw"]  # e.g., 'yaw' in degrees
+    yaw_rate_col = config["yaw_rate"]  # e.g., 'yaw_rate' in deg/s
+    speed_col = config['speed']  # e.g., 'speed' in m/s
+
+    # 1) Compute the traveled distance along the curve for each segment
+    lat_vals = df[lat_col].values
+    lon_vals = df[lon_col].values
+
+    # Compute distances between consecutive points along the spline
+    ds = compute_spline_segment_distances(lat_vals, lon_vals)  # shape: (n-1,)
+
+    # Add the computed distances to the DataFrame
+    df['distance_spline_segment'] = np.append(ds, np.nan)
+
+    # Convert yaw from degrees -> radians and unwrap differences
+    yaw_deg = df[yaw_col].values
+    yaw_rad = np.radians(yaw_deg)
+    dtheta = np.diff(yaw_rad)  # shape: (n-1,)
+    dtheta = np.unwrap(dtheta)  # Avoid ±π jumps
+
+    # Compute curvature (dtheta / ds)
+    curvature_dist = np.zeros_like(ds)
+    mask = (ds != 0)
+    curvature_dist[mask] = dtheta[mask] / ds[mask]
+
+    # Append NaN to align with DataFrame row count
+    df['curvature_yaw_distance'] = np.append(curvature_dist, np.nan)
+
+    # 2) Curvature from yaw_rate and speed
+    yaw_rate_deg_s = df[yaw_rate_col].values  # deg/s
+    speed_m_s = df[speed_col].values  # m/s
+
+    # Convert deg/s -> rad/s
+    yaw_rate_rad_s = yaw_rate_deg_s * (np.pi / 180.0)
+
+    # Avoid div-by-zero and invalid values
+    with np.errstate(divide='ignore', invalid='ignore'):
+        curvature_rate = yaw_rate_rad_s / speed_m_s
+        curvature_rate[~np.isfinite(curvature_rate)] = np.nan
+
+    df['curvature_yaw_rate'] = curvature_rate
+
+    return df
+
+
+# ------------------------------------------------------------------------------
+# data_fetch_tunnel_data: Fetches railway tunnel data from OSM using Overpass.
+# ------------------------------------------------------------------------------
+def data_fetch_tunnel_data(config: dict) -> pd.DataFrame:
+    bbox = config["bbox"]
+    overpass_url = config["overpass_url"]
+    query = f"""
+    [out:json];
+    (
+      way["railway"="rail"]["tunnel"="yes"]({bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]});
+    );
+    out body;
+    >;
+    out skel qt;
+    """
+    print("Fetching railway tunnels from OSM...")
+    response = requests.get(overpass_url, params={'data': query})
+    data = response.json()
+    print("Tunnel data received!")
+
+    ways = {el["id"]: el["nodes"] for el in data["elements"] if el["type"] == "way"}
+    nodes = {el["id"]: (el["lat"], el["lon"]) for el in data["elements"] if el["type"] == "node"}
+
+    tunnel_list = []
+    for way_id, node_ids in ways.items():
+        coords = [nodes[nid] for nid in node_ids if nid in nodes]
+        if len(coords) > 1:
+            tunnel_list.append({"structure_id": way_id, "structure_type": "tunnel", "coordinates": coords})
+
+    tunnel_df = pd.DataFrame(tunnel_list)
+    return tunnel_df
+
+
+# ------------------------------------------------------------------------------
+# data_fetch_bridge_data: Fetches railway bridge data from OSM using Overpass.
+# ------------------------------------------------------------------------------
+def data_fetch_bridge_data(config: dict) -> pd.DataFrame:
+    bbox = config["bbox"]
+    overpass_url = config["overpass_url"]
+    query = f"""
+    [out:json];
+    (
+      way["railway"="rail"]["bridge"="yes"]({bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]});
+    );
+    out body;
+    >;
+    out skel qt;
+    """
+    print("Fetching railway bridges from OSM...")
+    response = requests.get(overpass_url, params={'data': query})
+    data = response.json()
+    print("Bridge data received!")
+
+    ways = {el["id"]: el["nodes"] for el in data["elements"] if el["type"] == "way"}
+    nodes = {el["id"]: (el["lat"], el["lon"]) for el in data["elements"] if el["type"] == "node"}
+
+    bridge_list = []
+    for way_id, node_ids in ways.items():
+        coords = [nodes[nid] for nid in node_ids if nid in nodes]
+        if len(coords) > 1:
+            bridge_list.append({"structure_id": way_id, "structure_type": "bridge", "coordinates": coords})
+
+    bridge_df = pd.DataFrame(bridge_list)
+    return bridge_df
+
+
+# ------------------------------------------------------------------------------
+# data_add_structure_status: Annotates an input DataFrame with structure status,
+# using the "GPS Qualität" column.
+# ------------------------------------------------------------------------------
+def data_add_infrastructure_status(input_df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """
+    Annotates the input DataFrame with a new column "structure_status" based on the train's GPS data.
+
+    The config dict should include:
+      - "overpass_url": Overpass API URL.
+      - "bbox": Bounding box [min_lat, min_lon, max_lat, max_lon].
+      - "structure_threshold": Distance in km within which a train point is considered near a structure.
+      - "tunnel_file": Local file name for tunnel data (e.g., "tunnels.csv").
+      - "bridge_file": Local file name for bridge data (e.g., "bridges.csv").
+      - "gps_lat_col": Name of the latitude column in the train DataFrame.
+      - "gps_lon_col": Name of the longitude column in the train DataFrame.
+      - "gps_quality_col": Name of the column with GPS quality (e.g., "GPS Qualität").
+
+    For each train point:
+      - If the value in "GPS Qualität" is not 4, the function checks for nearby structure nodes (tunnels or bridges).
+          - If one is found, the status is set to "Encountered {structure_type} {structure_id}".
+          - If none is found, it is set to "No structure encountered".
+      - If "GPS Qualität" equals 4, the status is set to "GPS quality OK".
+
+    Returns the updated DataFrame.
+    """
+    # Load or fetch tunnel data.
+    tunnel_file = config.get("tunnel_file", "tunnels.csv")
+    if os.path.exists(tunnel_file):
+        print(f"Loading tunnel data from {tunnel_file} ...")
+        tunnels_df = pd.read_csv(tunnel_file, converters={"coordinates": eval})
+        print("Tunnel data loaded.")
+    else:
+        print("Tunnel file not found. Fetching tunnel data from OSM...")
+        tunnels_df = data_fetch_tunnel_data(config)
+        tunnels_df.to_csv(tunnel_file, index=False)
+        print(f"Tunnel data saved to {tunnel_file}.")
+
+    # Load or fetch bridge data.
+    bridge_file = config.get("bridge_file", "bridges.csv")
+    if os.path.exists(bridge_file):
+        print(f"Loading bridge data from {bridge_file} ...")
+        bridges_df = pd.read_csv(bridge_file, converters={"coordinates": eval})
+        print("Bridge data loaded.")
+    else:
+        print("Bridge file not found. Fetching bridge data from OSM...")
+        bridges_df = data_fetch_bridge_data(config)
+        bridges_df.to_csv(bridge_file, index=False)
+        print(f"Bridge data saved to {bridge_file}.")
+
+    # Combine tunnel and bridge data.
+    structures_df = pd.concat([tunnels_df, bridges_df], ignore_index=True)
+
+    # Prepare structure data for spatial querying.
+    all_structure_points = []
+    all_structure_ids = []
+    all_structure_types = []
+    for _, row in structures_df.iterrows():
+        for point in row["coordinates"]:
+            all_structure_points.append(point)
+            all_structure_ids.append(row["structure_id"])
+            all_structure_types.append(row["structure_type"])
+    all_structure_points = np.array(all_structure_points)
+    structure_points_rad = np.radians(all_structure_points)
+    tree = BallTree(structure_points_rad, metric='haversine')
+
+    # Prepare train data.
+    lat_col, lon_col = csv_select_gps_columns(
+        input_df,
+        title="Select GPS Data",
+        prompt="Select GPS columns for tunnels"
+    )
+    train_points = input_df[[lat_col, lon_col]].to_numpy()
+    train_points_rad = np.radians(train_points)
+
+    structure_threshold = config.get("structure_threshold", 0.01)  # km
+    earth_radius = 6371.0  # km
+    threshold_rad = structure_threshold / earth_radius
+
+    # Query the BallTree for nearby structure points.
+    indices = tree.query_radius(train_points_rad, r=threshold_rad)
+
+    quality_col = config.get("gps_quality_col", "GPS Qualität")
+    statuses = []
+    for i, idx_list in enumerate(indices):
+        try:
+            gps_quality = int(input_df.iloc[i][quality_col])
+        except (ValueError, TypeError):
+            gps_quality = None
+
+        if gps_quality is not None and gps_quality != 4:
+            if len(idx_list) > 0:
+                structure_id = all_structure_ids[idx_list[0]]
+                structure_type = all_structure_types[idx_list[0]]
+                status = f"Encountered {structure_type} {structure_id}"
+            else:
+                status = "No structure encountered"
+        else:
+            status = "GPS quality OK"
+        statuses.append(status)
+
+    input_df["structure_status"] = statuses
+    return input_df
+
+
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger(__name__)
 
 
 def data_get_elevation(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
@@ -860,7 +1502,7 @@ def data_compute_traveled_distance(df: pd.DataFrame, config: Dict[str, Any]) -> 
     print("[DEBUG] Sample of geodesic distances:", geodesic_distances[:10])
 
     # 5) Add the computed distances to the DataFrame
-    #df["distance"] = geodesic_distances
+    df["distance"] = geodesic_distances
     df["cumulative_distance"] = np.cumsum(geodesic_distances)
 
     print("=== data_compute_traveled_distance: END ===\n")
@@ -929,106 +1571,157 @@ def data_compute_gradient(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFr
     return df
 
 
+
+
+def data_smooth_gradient(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
+    gradient_promille_col = config.get("gradient_promille_column", "gradient_promille")
+    smoothed_col = config.get("smoothed_gradient_promille_column", "smoothed_gradient_promille")
+    window_size = config.get("smoothing_window", 501)
+
+    # Savitzky-Golay filter requires an odd window length
+    if window_size % 2 == 0:
+        window_size += 1
+
+    # Apply the filter with a polynomial order of 2 (you can experiment with this)
+    df[smoothed_col] = savgol_filter(df[gradient_promille_col], window_length=window_size, polyorder=2)
+    return df
+
+
 import numpy as np
 import pandas as pd
+from filterpy.kalman import KalmanFilter
 
-def data_compute_curvature_radius_and_detect_steady_curves(
-    df: pd.DataFrame, config: dict = None
-) -> pd.DataFrame:
-    """
-    1) Compute signed curvature & radius (with sign).
-    2) Apply 'straight line' threshold if radius > e.g. 11000.
-    3) Segment the data using a variable-window approach for 'steady curves'.
-    4) Optionally compute mean radius/curvature for each segment.
-    """
-    if config is None:
-        config = {}
+import numpy as np
+import pandas as pd
+from filterpy.kalman import KalmanFilter
 
-    # --- Step 1) & 2) Just like before ---
-    def compute_radius_and_curvature_with_threshold(df_inner: pd.DataFrame, cfg: dict) -> None:
-        distance_col = cfg.get("distance_col", "cumulative_distance")
-        heading_col = cfg.get("heading_col", "heading_deg_ds")
-        radius_col = cfg.get("radius_col", "radius_m")
-        curvature_col = cfg.get("curvature_col", "curvature")
-        straight_threshold = cfg.get("straight_threshold", 11000.0)
 
-        heading_diff_deg = df_inner[heading_col].diff()
-        heading_diff_deg = (heading_diff_deg + 180) % 360 - 180
-        heading_diff_deg = heading_diff_deg.fillna(0)
+def moving_average(data, window_size):
+    """ Compute moving average for 2D position data (x, y)."""
+    if data.shape[0] < window_size:
+        return data[-1]  # Return last valid entry if not enough data
+    smoothed_x = np.convolve(data[:, 0], np.ones(window_size) / window_size, mode='valid')
+    smoothed_y = np.convolve(data[:, 1], np.ones(window_size) / window_size, mode='valid')
+    return np.array([smoothed_x[-1], smoothed_y[-1]])
 
-        heading_diff_rad = heading_diff_deg * (np.pi / 180.0)
-        heading_diff_rad_no_zero = heading_diff_rad.replace(0, np.nan)
 
-        radius = df_inner[distance_col] / heading_diff_rad_no_zero
-        radius = radius.fillna(np.inf)
-        curvature = heading_diff_rad_no_zero / df_inner[distance_col]
-        curvature = curvature.fillna(0)
+def downsample_gps(df, time_col, time_step):
+    """ Downsample GPS data to a lower frequency by averaging over time intervals."""
+    df[time_col] = pd.to_datetime(df[time_col], errors='coerce', infer_datetime_format=True)
+    df = df.set_index(time_col).resample(f'{time_step}s').mean().dropna().reset_index()
+    return df
 
-        # apply threshold for "straight line"
-        too_large = radius.abs() > straight_threshold
-        radius[too_large] = np.inf
-        curvature[too_large] = 0.0
 
-        df_inner[radius_col] = radius
-        df_inner[curvature_col] = curvature
+def initialize_kalman(dt, process_noise, measurement_noise):
+    """ Initialize the Kalman filter."""
+    kf = KalmanFilter(dim_x=4, dim_z=2)  # 4 state variables (x, y, vx, vy), 2 measurement variables (x, y)
+    kf.F = np.array([[1, 0, dt, 0],  # x position update
+                     [0, 1, 0, dt],  # y position update
+                     [0, 0, 1, 0],  # x velocity
+                     [0, 0, 0, 1]])  # y velocity
+    kf.H = np.array([[1, 0, 0, 0],
+                     [0, 1, 0, 0]])  # We only measure position
+    kf.Q = np.eye(4) * process_noise  # Process noise covariance
+    kf.R = np.eye(2) * measurement_noise  # Measurement noise covariance
+    kf.P = np.eye(4) * 100  # Large initial uncertainty
+    kf.x = np.zeros((4, 1))  # Initial state vector (position and velocity)
+    return kf
 
-    # --- Step 3) Dynamic "Steady" segmentation ---
-    def detect_steady_curves_variable_window(df_inner: pd.DataFrame, cfg: dict) -> None:
-        curvature_col = cfg.get("curvature_col", "curvature")
-        std_threshold = cfg.get("curvature_std_thresh", 0.0001)
-        min_segment_size = cfg.get("min_segment_size", 3)  # e.g. 5 points
 
-        c = df_inner[curvature_col].to_numpy()
-        n = len(c)
+def data_rollWin_Kalman_on_gps(df, config):
+    """ Process GPS data to remove stops and smooth with Kalman filtering using hysteresis."""
+    x_col = config['x_col']
+    y_col = config['y_col']
+    speed_col = config['speed_column']
+    time_col = config['time_column']
 
-        steady_group_ids = np.zeros(n, dtype=int)  # store group IDs
-        group_id = 0
+    REQUIRED_COLUMNS = {x_col, y_col, speed_col, time_col}
 
-        start_idx = 0
-        for i in range(n):
-            seg_curv = c[start_idx : i + 1]
-            curv_std = np.nanstd(seg_curv)  # or np.std(...) if no NaNs
+    # Validate input DataFrame
+    if not REQUIRED_COLUMNS.issubset(df.columns):
+        raise ValueError(f"Input DataFrame must contain the following columns: {REQUIRED_COLUMNS}")
+    if df.empty:
+        raise ValueError("Input DataFrame is empty. Please provide valid GPS data.")
 
-            if curv_std <= std_threshold:
-                # keep extending
-                pass
-            else:
-                # finalize up to i-1
-                seg_length = i - start_idx
-                if seg_length >= min_segment_size:
-                    group_id += 1
-                    steady_group_ids[start_idx : i] = group_id
-                # start new group from i
-                start_idx = i
+    df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
 
-        # finalize last segment
-        seg_length = n - start_idx
-        if seg_length >= min_segment_size:
-            group_id += 1
-            steady_group_ids[start_idx : n] = group_id
+    # Downsample GPS data
+    df = downsample_gps(df, time_col, time_step=1)
 
-        df_inner["steady_group"] = steady_group_ids
+    # Handle missing values
+    df = df.dropna(subset=[x_col, y_col, speed_col])
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.interpolate(method='linear', limit_direction='both')
+    df = df.dropna().reset_index(drop=True)
 
-    # --- Step 4) Optionally compute mean radius/curvature for each segment
-    def compute_segment_means(df_inner: pd.DataFrame, cfg: dict) -> None:
-        radius_col = cfg.get("radius_col", "radius_m")
-        curvature_col = cfg.get("curvature_col", "curvature")
+    SPEED_MOVE = config['speed_move']
+    SPEED_STOP = config['speed_stop']
+    MOVE_DURATION = config['move_duration']
+    STOP_DURATION = config['stop_duration']
+    DT = config['time_step']
+    PROCESS_NOISE = config['process_noise']
+    MEASUREMENT_NOISE = config['measurement_noise']
 
-        df_inner["steady_mean_radius"] = (
-            df_inner.groupby("steady_group")[radius_col].transform("mean")
-        )
-        df_inner["steady_mean_curvature"] = (
-            df_inner.groupby("steady_group")[curvature_col].transform("mean")
-        )
+    kf = initialize_kalman(DT, PROCESS_NOISE, MEASUREMENT_NOISE)
+    is_moving = None
+    move_timer, stop_timer = 0, 0
+    filtered_positions = []
+    valid_rows = []
+    prev_x, prev_y = None, None
 
-    # -------------------------------------------
-    # 1) & 2) radius/curvature with threshold
-    compute_radius_and_curvature_with_threshold(df, config)
+    for i, row in df.iterrows():
+        if not np.isfinite(row[x_col]) or not np.isfinite(row[y_col]):
+            continue  # Skip invalid rows
 
-    # 3) dynamic "steady" detection
-    detect_steady_curves_variable_window(df, config)
+        current_pos = np.array([[row[x_col]], [row[y_col]]])
 
-    # 4) segment means
-    compute_segment_means(df, config)
+        if i == 0:
+            kf.x = np.array([[row[x_col]], [row[y_col]], [0], [0]])
+            filtered_positions.append([row[x_col], row[y_col]])
+            prev_x, prev_y = row[x_col], row[y_col]
+            valid_rows.append(i)
+            continue
+
+        dx, dy = row[x_col] - prev_x, row[y_col] - prev_y
+        norm = np.sqrt(dx ** 2 + dy ** 2)
+
+        if norm > 0:
+            vx, vy = row[speed_col] * (dx / norm), row[speed_col] * (dy / norm)
+        else:
+            vx, vy = 0, 0
+
+        prev_x, prev_y = row[x_col], row[y_col]
+
+        if row[speed_col] > SPEED_MOVE:
+            move_timer += 1
+            stop_timer = 0
+        elif row[speed_col] < SPEED_STOP:
+            stop_timer += 1
+            move_timer = 0
+
+        if is_moving is None:
+            if move_timer >= MOVE_DURATION:
+                is_moving = True
+            elif stop_timer >= STOP_DURATION:
+                is_moving = False
+        else:
+            if move_timer >= MOVE_DURATION:
+                is_moving = True
+            elif stop_timer >= STOP_DURATION:
+                is_moving = False
+
+        if is_moving:
+            kf.predict()
+            kf.update(current_pos)
+            filtered_pos = kf.x[:2].flatten().tolist()
+            valid_rows.append(i)
+        else:
+            filtered_pos = moving_average(df[[x_col, y_col]].values[:i + 1], window_size=3).tolist()
+
+        filtered_positions.append(filtered_pos)
+
+    filtered_df = pd.DataFrame(filtered_positions, columns=['filtered_x', 'filtered_y'], index=df.index[valid_rows])
+    df = df.loc[valid_rows].reset_index(drop=True)
+    df = pd.concat([df, filtered_df], axis=1)
 
     return df

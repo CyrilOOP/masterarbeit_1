@@ -204,37 +204,62 @@ def generate_map_from_csv(subset_full_path: str) -> None:
         # =========================================================================
         # 13. Add Time-Animated Marker (Using Raw Data)
         # =========================================================================
-        # Ensure that 'DatumZeit' is parsed as datetime in the raw data.
+
+        # Ensure 'DatumZeit' is in the DataFrame and convert it to datetime format
         if "DatumZeit" in raw_df.columns:
-            raw_df["DatumZeit"] = pd.to_datetime(raw_df["DatumZeit"], errors="coerce")
+            raw_df["DatumZeit"] = pd.to_datetime(raw_df["DatumZeit"],
+                                                 errors="coerce")  # Convert to datetime, set errors to NaT
         else:
             raise ValueError("Raw data is missing the required 'DatumZeit' column for animation.")
 
-        # Remove rows with invalid or missing time data
+        # Remove rows where 'DatumZeit' could not be parsed (i.e., is NaT)
         raw_df = raw_df.dropna(subset=["DatumZeit"])
 
         features = []
+        # Iterate over each row to create a feature for the animated marker
         for _, row in raw_df.iterrows():
-            lat = row["GPS_lat"]
-            lon = row["GPS_lon"]
-            time_val = row["DatumZeit"]
-            time_str = time_val.isoformat()
+            lat = row["GPS_lat"]  # Extract latitude
+            lon = row["GPS_lon"]  # Extract longitude
+            time_val = row["DatumZeit"]  # Get the datetime value
+            time_str = time_val.isoformat()  # Convert datetime to ISO format string for the animation
 
+            # Create HTML content for the popup (display time and 'Gier' value)
             popup_text = (
-                f"<b>Time:</b> {time_val}<br>"
-                f"<b>Gier:</b> {row['Gier']}"
+                f"<b>Time:</b> {time_val}<br>"  # Show the timestamp
+                f"<b>Gier:</b> {row['Gier']}"  # Show the 'Gier' value
             )
 
+            # Append a new GeoJSON feature for this row
             features.append({
                 "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},  # Define point geometry
                 "properties": {
-                    "time": time_str,
-                    "popup": popup_text,
-                    "style": {"color": "black", "fillColor": "black"},
-                    "icon": "circle"
+                    "time": time_str,  # Timestamp for the animation
+                    "popup": popup_text,  # Popup HTML content
+                    "style": {"color": "black", "fillColor": "black"},  # Marker style
+                    "icon": "circle"  # Marker icon type
                 }
             })
+
+        if features:
+            # Bundle all features into a GeoJSON FeatureCollection
+            geojson_data = {"type": "FeatureCollection", "features": features}
+
+            # Create the animated marker with the specified parameters:
+            animated_marker = TimestampedGeoJson(
+                data=geojson_data,  # GeoJSON data containing the features
+                transition_time=500,  # Transition time (in ms) between time frames (500ms = 0.5 sec)
+                loop=False,  # Do not loop the animation when it reaches the end
+                auto_play=False,  # Do not start the animation automatically
+                add_last_point=True,  # Keep the last point visible on the map
+                period="PT10S",  # Each frame represents a 10-second interval (ISO 8601 duration)
+                duration="PT1S"  # Each marker is displayed for 1 second (ISO 8601 duration)
+            )
+            animated_marker.add_to(m)  # Add the animated marker to the map object 'm'
+
+        else:
+            print("Skipping the raw original GPS path to save time...")
+        # =========================================================================
 
         if features:
             geojson_data = {"type": "FeatureCollection", "features": features}
@@ -362,7 +387,7 @@ def generate_map_from_csv(subset_full_path: str) -> None:
 
             # --- Assign black color if the value is outside the defined range ---
             if yaw_value < yaw_vmin or yaw_value > yaw_vmax:
-                segment_color = "#FFFF00"  # Black for out-of-range values
+                segment_color = "#FFFF00"  # Yellow for out-of-range values
             else:
                 segment_color = mcolors.to_hex(yaw_cmap(yaw_norm(yaw_value)))
 

@@ -1,5 +1,6 @@
 import sys
 from typing import Dict, List, Tuple, Any
+import concurrent.futures
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
@@ -9,23 +10,33 @@ from PyQt5.QtWidgets import (
 
 
 from csv_tools import (
-    csv_load, csv_save, csv_get_statistics, csv_group_by_date_and_save, subsets_by_date
+    csv_load,
+    csv_save,
+    csv_get_statistics,
+    csv_group_by_date_and_save,
+    subsets_by_date
 )
 from data_tools import (
-    data_smooth_gps_savitzky,
-    data_smooth_gps_gaussian,
+    # data_smooth_gps_savitzky,
+    # data_smooth_gps_gaussian,
     data_convert_to_planar,
-    data_filter_points_by_distance,
-    parse_time_and_compute_dt,
-    data_compute_heading_from_xy,
+    # data_filter_points_by_distance,
+    data_parse_time_and_compute_dt,
+    data_compute_heading_dx_dy,
     data_compute_yaw_rate_from_heading,
     data_delete_the_one_percent,
-    data_compute_heading_from_ds,
-    data_kalman_on_yaw_rate, data_particle_filter,
-    data_remove_gps_outliers,
+    data_compute_heading_ds,
+    # data_kalman_on_yaw_rate, data_particle_filter,
+    # data_remove_gps_outliers,
     data_rolling_windows_gps_data,
-    data_compute_curvature,
-    data_add_infrastructure_status,
+    # data_compute_curvature,
+    # data_add_infrastructure_status,
+    data_get_elevation,
+    data_compute_traveled_distance,
+    data_compute_gradient,
+    data_compute_curvature_radius_and_detect_steady_curves,
+    # data_smooth_gradient,
+    # data_rollWin_Kalman_on_gps,
 )
 from map_generator import generate_map_from_csv
 
@@ -451,21 +462,27 @@ def main(config: Dict[str, Any], subsets: List[str]) -> None:
 
             # Mapping der möglichen Schritte (Name im config -> (Funktion, suffix))
             processing_steps = [
-                ("remove_the_outliers", data_remove_gps_outliers, "outliers"),
+             #   ("remove_the_outliers", data_remove_gps_outliers, "outliers"),
+                ("parse_time", data_parse_time_and_compute_dt, "time"),
                 ("filter_GPS_with_rolling_windows", data_rolling_windows_gps_data, "rollingW"),
-                ("smooth_gps_data_savitzky",  data_smooth_gps_savitzky,   "savitzky"),
-                ("smooth_gps_data_gaussian",  data_smooth_gps_gaussian,   "gaussian"),
-                ("smooth_gps_particule_filter", data_particle_filter, "particule"),
+             #   ("smooth_gps_data_savitzky",  data_smooth_gps_savitzky,   "savitzky"),
+               # ("smooth_gps_data_gaussian",  data_smooth_gps_gaussian,   "gaussian"),
+              #  ("smooth_gps_particule_filter", data_particle_filter, "particule"),
                 ("convert_to_planar",         data_convert_to_planar,     "planar"),
-                ("filter_with_distances",     data_filter_points_by_distance, "dist"),
-                ("parse_time",                parse_time_and_compute_dt,   "time"),
-                ("compute_heading_from_xy",   data_compute_heading_from_xy,"heading"),
-                ("compute_heading_from_ds",   data_compute_heading_from_ds, "headingDS" ),
+              #  ( "rolling_windows_+_kalman_on GPS", data_rollWin_Kalman_on_gps, "rollKal"),
+              #  ("filter_with_distances",     data_filter_points_by_distance, "distFilt"),
+                ("compute_traveled_distance", data_compute_traveled_distance, "distance"),
+                ("compute_heading_with_dy/dx",   data_compute_heading_dx_dy, "headingDX"),
+                ("compute_heading_with_dx/ds",   data_compute_heading_ds, "headingDS" ),
                 ("compute_yaw_rate_from_heading", data_compute_yaw_rate_from_heading, "yawRate"),
-                ("use_kalman_on_yaw_rate",    data_kalman_on_yaw_rate, "kalman"),
+              #  ("use_kalman_on_yaw_rate",    data_kalman_on_yaw_rate, "kalman"),
                 ("delete_the_boundaries",     data_delete_the_one_percent, "delBoundaries"),
-                ("compute_curvature",         data_compute_curvature, "curvature"),
-                ("infrastructure_identifier",         data_add_infrastructure_status, "infra"),
+                ("compute_curvature_and_radius",   data_compute_curvature_radius_and_detect_steady_curves, "radius"),
+             #   ("infrastructure_identifier", data_add_infrastructure_status, "infra"),
+                ("get_elevation",             data_get_elevation, "elevation"),
+                ("get_gradient",              data_compute_gradient, "gradient"),
+            #   ("smoothed_gradient",         data_smooth_gradient, "smooothGradient"),
+
             ]
 
             processed_suffixes = []
@@ -509,21 +526,26 @@ if __name__ == "__main__":
     # Voreinstellungen
     DEFAULT_CONFIG = {
         "statistics": False,
-        "remove_the_outliers": True,
-        "filter_GPS_with_rolling_windows": True,
-        "smooth_gps_data_savitzky": True,
-        "smooth_gps_data_gaussian": True,
-        "smooth_gps_particule_filter": True,
-        "convert_to_planar": True,
-        "filter_with_distances": True,
+       # "remove_the_outliers": True,
         "parse_time": True,
-        "compute_heading_from_xy": True,
-        "compute_heading_from_ds": True,
+        "filter_GPS_with_rolling_windows": True,
+      #  "smooth_gps_data_savitzky": True,
+      #  "smooth_gps_data_gaussian": True,
+      #  "smooth_gps_particule_filter": True,
+        "convert_to_planar": True,
+      #  "rolling_windows_+_kalman_on GPS" : True,
+      #  "filter_with_distances": True,
+        "compute_traveled_distance" : True,
+        "compute_heading_with_dy/dx": True,
+        "compute_heading_with_dx/ds": True,
         "compute_yaw_rate_from_heading": True,
-        "compute_curvature" : True,
-        "use_kalman_on_yaw_rate": True,
+        "compute_curvature_and_radius" : True,
+      #  "use_kalman_on_yaw_rate": True,
         "delete_the_boundaries": True,
-        "infrastructure_identifier" : True,
+       # "infrastructure_identifier" : True,
+        "get_elevation" : True,
+        "get_gradient" : True,
+        "smoothed_gradient" : True,
         "save_to_csv": True,
         "enable_statistics_on_save": True,  # bedeutet: csv_save ruft csv_get_statistics automatisch auf
         "generate_map": False,
@@ -541,6 +563,10 @@ if __name__ == "__main__":
     # Baue das finale Config-Dict
     CONFIG = {
         # Mögliche globale Einstellungen
+
+        "elapsed_time" : "elapsed_time_s",
+        "dt" : "delta_time_s",
+        
         "output_folder_for_subsets_by_date": "subsets_by_date",
         "column_name": "DatumZeit",  # Wenn du eine Spalte fürs Gruppieren benötigst
         "encoding": "utf-8",
@@ -568,10 +594,11 @@ if __name__ == "__main__":
 
         #for the rolling window
         "speed_threshold_stopped_rolling_windows": 0.5,
-        "distance_window_meters" : 10,
+        "distance_window_meters" : 20,
         "time_window_min": 1.0,
-        "time_window_max": 300.0,
-        "speed_bins": [0.0, 0.5,  5.0, 15.0, 30.0, float("inf")],
+        "time_window_max": 9999.0,
+        "max_stop_window": 999999999.0,
+        "speed_bins": [0.0, 0.5, 2.0, 5.0, 15.0, 30.0, float("inf")],
 
         #for curvature
         "yaw" : "heading_deg_ds",
@@ -590,6 +617,41 @@ if __name__ == "__main__":
         "bridge_file": "bridges.csv",
         "tunnel_file" : "tunnels.csv",
         "gps_quality_col" : "GPS Qualität",
+
+        # === Configuration Variables for elevation===
+        "api_key": 'AIzaSyAb7ec8EGcU5MiHlQ9jJETvABNYNyiq-WE',  # replace with your google elevation api key
+        "api_url": 'https://maps.googleapis.com/maps/api/elevation/json',
+        "batch_size": 280,  # google allows up to 512 per request, but we use 100 for safety
+        "threads": 10,  # number of parallel api requests
+
+
+        # for the gradient
+        "elevation_column" : "elevation",
+        "horizontal_distance_column": "cumulative_distance",
+
+        # for smoothing the gradient
+        "gradient_promille_column" : "gradient_promille",
+        "smoothing_windows" : 50000,
+
+        #for heading
+        "cumulative_distance" : "cumulative_distance",
+
+
+        # for Rollwin + kalman
+        "speed_move" : 0.8,
+        "speed_stop" : 0.5,
+        'time_window': 3,
+        'time_step': 1.0,
+        'process_noise' : 0.01,
+        'measurement_noise' : 3.0,
+        'move_duration' : 3,
+        'stop_duration' : 5,
+        'time_column' : "DatumZeit",
+
+        # for the heading with ds :
+        "x_col_heading_ds" : "filtered_x",
+        "y_col_heading_ds" : "filtered_y",
+
 
 
         **selected_steps
