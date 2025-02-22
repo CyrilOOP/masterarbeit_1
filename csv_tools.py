@@ -151,6 +151,7 @@ def csv_group_by_date_and_save(df: pd.DataFrame, output_folder: str, config: Opt
     except Exception as e:
         raise ValueError(f"Error grouping and saving data: {e}")
 
+
 def csv_get_statistics(file_path: str, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Generate and save enhanced statistics for a CSV file, including missing, zero value analysis,
@@ -169,6 +170,11 @@ def csv_get_statistics(file_path: str, config: Optional[Dict[str, Any]] = None) 
     Raises:
         ValueError: If there is an error generating or saving statistics.
     """
+    import os
+    import numpy as np
+    import pandas as pd
+    from typing import Optional, Dict, Any
+
     if config is None:
         config = {}
 
@@ -205,11 +211,12 @@ def csv_get_statistics(file_path: str, config: Optional[Dict[str, Any]] = None) 
     stats_report.append(combined_stats.to_string() + "\n\n")
 
     stats_report.append("=== Numerical Column Statistics ===\n")
-    if not df.select_dtypes(include=["number"]).empty:
-        stats_report.append(df.describe().to_string() + "\n\n")
+    # Replace infinities with NaN in numerical columns before generating statistics
+    numeric_df = df.select_dtypes(include=["number"]).replace([np.inf, -np.inf], np.nan)
+    if not numeric_df.empty:
+        stats_report.append(numeric_df.describe().to_string() + "\n\n")
     else:
         stats_report.append("No numerical columns found.\n\n")
-
 
     if 'DatumZeit' in df.columns:
         stats_report.append("=== DatumZeit Column Analysis ===\n")
@@ -246,6 +253,7 @@ def csv_get_statistics(file_path: str, config: Optional[Dict[str, Any]] = None) 
         "selected_smoothing_method": selected_smoothing_method,
         "min_distance": min_distance
     }
+
 
 def subsets_by_date(folder_path: str, config: Optional[Dict[str, Any]] = None) -> List[str]:
     """

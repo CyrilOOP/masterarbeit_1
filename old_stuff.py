@@ -1725,3 +1725,94 @@ def data_rollWin_Kalman_on_gps(df, config):
     df = pd.concat([df, filtered_df], axis=1)
 
     return df
+
+
+
+def data_compute_curvature_radius_and_detect_steady_curves(
+    df: pd.DataFrame, config: dict = None
+) -> pd.DataFrame:
+    """
+    1) Compute signed curvature & radius (with sign).
+    2) Apply threshold for "straight line" if radius > e.g. 11000.
+    3) Segment the data using a variable-window approach for 'steady curves'.
+    4) Optionally compute mean radius/curvature for each segment.
+    """
+    print("\n[FUNCTION] data_compute_curvature_radius_and_detect_steady_curves: START")
+    import numpy as np
+
+    if config is None:
+        config = {}
+
+    def compute_radius_and_curvature_with_threshold(df_inner: pd.DataFrame, config: dict) -> None:
+        distance_col = config.get("distance_col", "cumulative_distance")
+        heading_col = config.get("heading_col", "heading_deg_ds")
+        radius_col = config.get("radius_col", "radius_m")
+        curvature_col = config.get("curvature_col", "curvature")
+        straight_threshold = config.get("straight_threshold", 11000.0)
+
+        heading_diff_deg = df_inner[heading_col].diff()
+        heading_diff_deg = (heading_diff_deg + 180) % 360 - 180
+        heading_diff_deg = heading_diff_deg.fillna(0)
+
+        heading_diff_rad = heading_diff_deg * (np.pi / 180.0)
+        heading_diff_rad_no_zero = heading_diff_rad.replace(0, np.nan)
+
+        radius = df_inner[distance_col] / heading_diff_rad_no_zero
+        radius = radius.fillna(np.inf)
+        curvature = heading_diff_rad_no_zero / df_inner[distance_col]
+        curvature = curvature.fillna(0)
+
+        too_large = radius.abs() > straight_threshold
+        radius[too_large] = np.inf
+        curvature[too_large] = 0.0
+
+        df_inner[radius_col] = radius
+        df_inner[curvature_col] = curvature
+
+    def detect_steady_curves_variable_window(df_inner: pd.DataFrame, config: dict) -> None:
+        curvature_col = config.get("curvature_col", "curvature")
+        std_threshold = config.get("curvature_std_thresh", 0.0001)
+        min_segment_size = config.get("min_segment_size", 3)
+
+        c = df_inner[curvature_col].to_numpy()
+        n = len(c)
+
+        steady_group_ids = np.zeros(n, dtype=int)
+        group_id = 0
+        start_idx = 0
+
+        for i in range(n):
+            seg_curv = c[start_idx : i + 1]
+            curv_std = np.nanstd(seg_curv)
+
+            if curv_std <= std_threshold:
+                # keep extending
+                pass
+            else:
+                seg_length = i - start_idx
+                if seg_length >= min_segment_size:
+                    group_id += 1
+                    steady_group_ids[start_idx : i] = group_id
+                start_idx = i
+
+        seg_length = n - start_idx
+        if seg_length >= min_segment_size:
+            group_id += 1
+            steady_group_ids[start_idx : n] = group_id
+
+        df_inner["steady_group"] = steady_group_ids
+
+    def compute_segment_means(df_inner: pd.DataFrame, config: dict) -> None:
+        radius_col = config.get("radius_col", "radius_m")
+        curvature_col = config.get("curvature_col", "curvature")
+
+        df_inner["steady_mean_radius"] = df_inner.groupby("steady_group")[radius_col].transform("mean")
+        df_inner["steady_mean_curvature"] = df_inner.groupby("steady_group")[curvature_col].transform("mean")
+
+    compute_radius_and_curvature_with_threshold(df, config)
+    detect_steady_curves_variable_window(df, config)
+    compute_segment_means(df, config)
+
+    print("[FUNCTION] data_compute_curvature_radius_and_detect_steady_curves: END\n")
+    return df
+

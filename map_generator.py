@@ -261,18 +261,6 @@ def generate_map_from_csv(subset_full_path: str) -> None:
             print("Skipping the raw original GPS path to save time...")
         # =========================================================================
 
-        if features:
-            geojson_data = {"type": "FeatureCollection", "features": features}
-            animated_marker = TimestampedGeoJson(
-                data=geojson_data,
-                transition_time=500,
-                loop=False,
-                auto_play=False,
-                add_last_point=True,
-                period="PT10S",
-                duration="PT1S"
-            )
-            animated_marker.add_to(m)
 
     else:
         print("Skipping the raw original GPS path to save time...")

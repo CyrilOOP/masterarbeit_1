@@ -4,23 +4,15 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="4739339c-27c4-4b22-82f2-2728b5e3b650" name="Changes" comment="fucking infra vs signal">
-      <change afterPath="$PROJECT_DIR$/ML_preprocessing.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/RollWin_Kalman_on_GPS.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/camparing_yaw_rate_dt_vs_ds.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/curvature_graph.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/data_tools_clean.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/elevation_map.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/elevation_map_vectorized.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/google_maps_elevation_api.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/grad_vs_elevation.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/heading_display.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/old_stuff.py" afterDir="false" />
+    <list default="true" id="4739339c-27c4-4b22-82f2-2728b5e3b650" name="Changes" comment="works ok... 21.02">
+      <change afterPath="$PROJECT_DIR$/main_test.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/csv_tools.py" beforeDir="false" afterPath="$PROJECT_DIR$/csv_tools.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/data_tools.py" beforeDir="false" afterPath="$PROJECT_DIR$/data_tools.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/graph_tools.py" beforeDir="false" afterPath="$PROJECT_DIR$/graph_tools.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/heading_display.py" beforeDir="false" afterPath="$PROJECT_DIR$/heading_display.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/map_generator.py" beforeDir="false" afterPath="$PROJECT_DIR$/map_generator.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/old_stuff.py" beforeDir="false" afterPath="$PROJECT_DIR$/old_stuff.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -108,7 +100,7 @@
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
     "settings.editor.selected.configurable": "vcs.log",
-    "two.files.diff.last.used.file": "C:/Users/cyril/PycharmProjects/Masterarbeit_1/map_generator.py",
+    "two.files.diff.last.used.file": "C:/Users/cyril/PycharmProjects/Masterarbeit_1/main_test.py",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
@@ -243,8 +235,8 @@
     <recent_temporary>
       <list>
         <item itemvalue="Python.main" />
-        <item itemvalue="Python.curvature_graph" />
         <item itemvalue="Python.heading_display" />
+        <item itemvalue="Python.curvature_graph" />
         <item itemvalue="Python.ML_preprocessing" />
         <item itemvalue="Python.remove_NAs" />
       </list>
@@ -299,6 +291,9 @@
       <workItem from="1739912362989" duration="36000" />
       <workItem from="1740133460659" duration="8847000" />
       <workItem from="1740143836888" duration="19571000" />
+      <workItem from="1740185143762" duration="140000" />
+      <workItem from="1740213211822" duration="10039000" />
+      <workItem from="1740231907383" duration="3536000" />
     </task>
     <task id="LOCAL-00001" summary="26/01">
       <option name="closed" value="true" />
@@ -460,7 +455,15 @@
       <option name="project" value="LOCAL" />
       <updated>1739549490740</updated>
     </task>
-    <option name="localTasksCounter" value="21" />
+    <task id="LOCAL-00021" summary="works ok... 21.02">
+      <option name="closed" value="true" />
+      <created>1740185254438</created>
+      <option name="number" value="00021" />
+      <option name="presentableId" value="LOCAL-00021" />
+      <option name="project" value="LOCAL" />
+      <updated>1740185254438</updated>
+    </task>
+    <option name="localTasksCounter" value="22" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -492,7 +495,8 @@
     <MESSAGE value="improved th rolling windows &#10;improved the map_generator, only one color scale, the rest is yellow" />
     <MESSAGE value="working fine" />
     <MESSAGE value="fucking infra vs signal" />
-    <option name="LAST_COMMIT_MESSAGE" value="fucking infra vs signal" />
+    <MESSAGE value="works ok... 21.02" />
+    <option name="LAST_COMMIT_MESSAGE" value="works ok... 21.02" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/Masterarbeit_1$use_ORM_to_filter.coverage" NAME="use_ORM_to_filter Coverage Results" MODIFIED="1738417525814" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
@@ -512,7 +516,7 @@
     <SUITE FILE_PATH="coverage/Masterarbeit_1$infrastructure_with_angles.coverage" NAME="infrastructure-with-angles Coverage Results" MODIFIED="1739531705598" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$smoothing_methods_test.coverage" NAME="smoothing_methods_test Coverage Results" MODIFIED="1738422621736" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$bad_ass.coverage" NAME="bad_ass Coverage Results" MODIFIED="1738855056672" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/Masterarbeit_1$heading_display.coverage" NAME="heading_display Coverage Results" MODIFIED="1740152742590" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Masterarbeit_1$heading_display.coverage" NAME="heading_display Coverage Results" MODIFIED="1740232061074" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$yaw_rate_graph_test.coverage" NAME="yaw_rate_graph_test Coverage Results" MODIFIED="1739217658015" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$GeoJSON_reader.coverage" NAME="GeoJSON_reader Coverage Results" MODIFIED="1739544118310" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$elevation_map_vectorized.coverage" NAME="elevation_map_vectorized Coverage Results" MODIFIED="1739573439234" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
@@ -523,7 +527,7 @@
     <SUITE FILE_PATH="coverage/Masterarbeit_1$infrastructure.coverage" NAME="infrastructure Coverage Results" MODIFIED="1739448639394" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$ML_preprocessing.coverage" NAME="ML_preprocessing Coverage Results" MODIFIED="1739824456220" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$tunnel_identifier.coverage" NAME="tunnel_identifier Coverage Results" MODIFIED="1739106144809" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/Masterarbeit_1$main.coverage" NAME="main Coverage Results" MODIFIED="1740174468237" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/Masterarbeit_1$main.coverage" NAME="main Coverage Results" MODIFIED="1740235416237" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$tunnel_identifier_vectorized.coverage" NAME="tunnel_identifier_vectorized Coverage Results" MODIFIED="1739107131607" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$graph_curvature.coverage" NAME="graph_curvature Coverage Results" MODIFIED="1739056636994" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/Masterarbeit_1$grad_vs_elevation.coverage" NAME="grad_vs_elevation Coverage Results" MODIFIED="1739625074152" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
