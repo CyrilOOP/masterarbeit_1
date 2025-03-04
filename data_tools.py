@@ -34,7 +34,7 @@ import pyproj
 import numpy as np
 from typing import Tuple, List, Dict, Any, Optional
 from geopy.distance import geodesic
-from scipy.interpolate import splprep, splev
+from scipy.signal import savgol_filter
 
 # --- Local Imports ---
 from csv_tools import csv_select_gps_columns
@@ -81,6 +81,11 @@ def data_convert_to_planar(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataF
     """
     print("\n[FUNCTION] data_convert_to_planar: START")
 
+
+    x_col = config["x"]
+    y_col = config["y"]
+
+
     # Use helper to select GPS columns.
     lat_input, lon_input = csv_select_gps_columns(
         df,
@@ -102,7 +107,7 @@ def data_convert_to_planar(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataF
     transformer = pyproj.Transformer.from_crs("EPSG:4326", epsg_code, always_xy=True)
 
     # Convert coordinates
-    df["x"], df["y"] = transformer.transform(df[lon_input].values, df[lat_input].values)
+    df[x_col], df[y_col] = transformer.transform(df[lon_input].values, df[lat_input].values)
 
     # Add selected method
     df["selected_smoothing_method"] = selected_method
@@ -114,26 +119,28 @@ def data_convert_to_planar(df: pd.DataFrame, config: Dict[str, str]) -> pd.DataF
 
     return df
 
-
 def data_parse_time(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
     """
     Parse the given datetime column as pandas datetime and compute:
-      - 'elapsed_time_s': Time in seconds relative to the first timestamp.
+      - A time-based column relative to the first timestamp.
 
     Args:
         df: Input DataFrame.
         config: Configuration dictionary containing:
-            - "datetime_col": Name of the column containing datetime information
-                              (defaults to "DatumZeit" if not provided).
+            - "datetime_col": Name of the column containing datetime information.
+            - "elapsed_time_col": Name of the new column storing elapsed time.
 
     Returns:
-        A copy of the DataFrame with the new column 'elapsed_time_s'.
+        A copy of the DataFrame with the new elapsed time column.
 
     Raises:
         ValueError: If the datetime column cannot be parsed.
     """
     print("\n[FUNCTION] data_parse_time: START")
-    datetime_col = config.get("datetime_col", "DatumZeit")
+
+    datetime_col = config["DatumZeit"]
+    elapsed_time_col = config["elapsed_time_s"]  # <-- Now configurable!
+
     df = df.copy()
 
     # Convert the column to datetime using explicit format (including milliseconds)
@@ -143,10 +150,12 @@ def data_parse_time(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
         raise ValueError(f"Error parsing datetime column '{datetime_col}': {e}")
 
     # Create a column with time in seconds relative to the first timestamp
-    df["elapsed_time_s"] = (df[datetime_col] - df[datetime_col].iloc[0]).dt.total_seconds()
+    df[elapsed_time_col] = (df[datetime_col] - df[datetime_col].iloc[0]).dt.total_seconds()
 
-    print("  > datetime_col =", datetime_col)
+    print(f"  > datetime_col = {datetime_col}")
+    print(f"  > elapsed_time_col = {elapsed_time_col}")
     print("[FUNCTION] data_parse_time: END\n")
+
     return df
 
 
@@ -168,9 +177,9 @@ def data_compute_heading_dx_dy(df: pd.DataFrame, config: Dict[str, str]) -> pd.D
     print("\n[FUNCTION] data_compute_heading_dx_dy: START")
     import numpy as np
 
-    x_col = config.get("x_col", "x")
-    y_col = config.get("y_col", "y")
-    heading_col = config.get("heading_col_dx_dy", "heading_dx_dy")
+    x_col = config["x"]
+    y_col = config["y"]
+    heading_col = config["heading_dx_dy_grad"]
 
     # Validate that required columns exist
     for col in [x_col, y_col]:
@@ -217,10 +226,10 @@ def data_compute_heading_ds(df: pd.DataFrame, config: Dict[str, str]) -> pd.Data
     print("\n[FUNCTION] data_compute_heading_ds: START")
     import numpy as np
 
-    x_col = config.get("x_col", "x")
-    y_col = config.get("y_col", "y")
-    cum_dist_col = config.get("cum_dist_col", "cumulative_distance")
-    heading_col = config.get("heading_col_ds", "heading_deg_ds")
+    x_col = config["x"]
+    y_col = config["y"]
+    cum_dist_col = config["cumulative_distance_m"]
+    heading_col = config["heading_dx_ds_grad"]
 
     # Validate
     for col in [x_col, y_col, cum_dist_col]:
@@ -253,7 +262,7 @@ def data_compute_heading_ds(df: pd.DataFrame, config: Dict[str, str]) -> pd.Data
     return df
 
 
-def select_heading_columns_gui(heading_candidates):
+def select_heading_columns_gui(heading_candidates, caller):
     """
     Opens a Tkinter GUI with a multi-select Listbox for heading columns.
     Returns a list of selected column names.
@@ -268,14 +277,14 @@ def select_heading_columns_gui(heading_candidates):
         root.destroy()
 
     root = tk.Tk()
-    root.title("Select Heading Columns")
+    root.title(f"Select Heading Columns for the {caller}")
     root.geometry("400x300")
     root.minsize(300, 200)
 
     root.columnconfigure(0, weight=1)
     root.rowconfigure(1, weight=1)
 
-    label = ttk.Label(root, text="Select heading column(s):")
+    label = ttk.Label(root, text=f"Select heading column(s) for the {caller}:")
     label.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="w")
 
     list_frame = ttk.Frame(root)
@@ -313,10 +322,14 @@ def data_compute_yaw_rate_from_heading(df: pd.DataFrame, config: dict) -> pd.Dat
     """
     print("\n[FUNCTION] data_compute_yaw_rate_from_heading: START")
 
-    if "elapsed_time_s" not in df.columns:
-        raise ValueError("Column 'elapsed_time_s' is missing from DataFrame.")
+    elapse_time = config["elapsed_time_s"]
 
-    time_delta_s = df["elapsed_time_s"].diff()
+    # Validate
+    for col in [elapse_time]:
+        if col not in df.columns:
+            raise ValueError(f"DataFrame must contain column '{col}'.")
+
+    time_delta_s = df[elapse_time].diff()
     time_delta_s = time_delta_s.fillna(0).replace(0, 1e-6)
 
     # Find candidate heading columns
@@ -331,7 +344,7 @@ def data_compute_yaw_rate_from_heading(df: pd.DataFrame, config: dict) -> pd.Dat
         selected_heading = heading_candidates
         print(f"  > Only one heading column found: '{heading_candidates[0]}'. Using it.")
     else:
-        selected_heading = select_heading_columns_gui(heading_candidates)
+        selected_heading = select_heading_columns_gui(heading_candidates, caller="yaw rate computing")
         if not selected_heading:
             messagebox.showwarning("Yaw Rate Computation", "No heading columns selected.")
             print("[FUNCTION] data_compute_yaw_rate_from_heading: END\n")
@@ -370,6 +383,11 @@ def data_delete_the_one_percent(df: pd.DataFrame, config: Dict[str, str]) -> pd.
     """
     print("\n[FUNCTION] data_delete_the_one_percent: START")
 
+    date_col = config["DatumZeit"]
+    input_lower_bound = config["delete_lower_bound_percentage"] / 100.0
+    input_upper_bound = config["delete_upper_bound_percentage"] / 100.0
+
+
     def select_yaw_rate_column_gui(candidates):
         root = tk.Tk()
         root.title("Select Yaw Rate Column")
@@ -392,25 +410,20 @@ def data_delete_the_one_percent(df: pd.DataFrame, config: Dict[str, str]) -> pd.
         root.mainloop()
         return selected.get()
 
-    date_col = config.get("date_column", "DatumZeit")
-    yaw_rate_col = config.get("yaw_rate_column", None)
-    input_lower_bound = config["delete_lower_bound_percentage"] / 100.0
-    input_upper_bound = config["delete_upper_bound_percentage"] / 100.0
-
     print(f"  > Lower quantile bound: {input_lower_bound} (fraction)")
     print(f"  > Upper quantile bound: {input_upper_bound} (fraction)")
 
     if date_col not in df.columns:
         raise ValueError(f"Column '{date_col}' is missing from the CSV file.")
 
-    if not yaw_rate_col or yaw_rate_col not in df.columns:
-        candidates = [col for col in df.columns if "yaw_rate" in col.lower()]
-        if len(candidates) == 0:
+    candidates = [col for col in df.columns if "yaw_rate" in col.lower()]
+
+    if len(candidates) == 0:
             raise ValueError("No yaw rate columns found in the CSV file.")
-        elif len(candidates) == 1:
+    elif len(candidates) == 1:
             yaw_rate_col = candidates[0]
             print(f"  > Only one yaw rate column: '{yaw_rate_col}'. Using it.")
-        else:
+    else:
             yaw_rate_col = select_yaw_rate_column_gui(candidates)
             print(f"  > You selected '{yaw_rate_col}'.")
 
@@ -431,7 +444,7 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
     print("\n[FUNCTION] data_rolling_windows_gps_data: START")
     import numpy as np
 
-    date_col = config.get("date_column", "DatumZeit")
+    elapsed_time = config["elapsed_time_s"]
     speed_col = config["speed_column"]
     speed_threshold_stopped = config["speed_threshold_stopped_rolling_windows"]
     distance_window_meters = config["distance_window_meters"]
@@ -439,24 +452,21 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
     time_window_max = config["time_window_max"]
     max_stop_window = config["max_stop_window"]
     speed_bins = config["speed_bins"]
-
-    # Convert date_col to datetime
-    df[date_col] = pd.to_datetime(df[date_col], format="%Y-%m-%d %H:%M:%S.%f")
-    t_arr = df[date_col].astype(np.int64) / 1e9
+    hysteresis_window = config["hysteresis_window"]
 
     lat_col_rol_win, lon_col_rol_win = csv_select_gps_columns(
         df,
         title="Select GPS Data for Rolling Windows",
-        prompt="Select the GPS data to use as input for rolling windows:"
+        prompt="Select the GPS data to use \n as input for rolling windows:"
     )
     print(f"  > Using lat_col_rol_win='{lat_col_rol_win}', lon_col_rol_win='{lon_col_rol_win}'")
 
     lat_arr = df[lat_col_rol_win].to_numpy(dtype=float)
     lon_arr = df[lon_col_rol_win].to_numpy(dtype=float)
+    t_arr = df[elapsed_time].values
 
     # Rolling (smoothed) speed
-    df['speed_filtered'] = df[speed_col].rolling(window=5, center=True, min_periods=1).mean()
-    spd_arr = df['speed_filtered'].to_numpy(dtype=float)
+    spd_arr = df[speed_col].rolling(window=5, center=True, min_periods=1).mean().to_numpy(dtype=float)
     n = len(df)
 
     def get_speed_class(spd, bins):
@@ -471,7 +481,7 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
         raw_window = distance_window_meters / (speed_value + 1e-6)
         return max(time_window_min, min(time_window_max, raw_window))
 
-    hysteresis_window = 10
+
     grouped_rows = []
     i = 0
 
@@ -504,7 +514,7 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
             mean_spd = sum_spd / count
 
             start_row_dict = df.iloc[i].copy().to_dict()
-            start_row_dict["time_numeric"] = t_arr[i]
+            #start_row_dict["time_numeric"] = t_arr[i]
             start_row_dict[speed_col] = mean_spd
             start_row_dict["GPS_lat_smoothed_rolling_windows"] = mean_lat
             start_row_dict["GPS_lon_smoothed_rolling_windows"] = mean_lon
@@ -512,7 +522,7 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
             grouped_rows.append(start_row_dict)
 
             end_row_dict = df.iloc[j - 1].copy().to_dict()
-            end_row_dict["time_numeric"] = t_arr[j - 1]
+       #    end_row_dict["time_numeric"] = t_arr[j - 1]
             end_row_dict[speed_col] = mean_spd
             end_row_dict["GPS_lat_smoothed_rolling_windows"] = mean_lat
             end_row_dict["GPS_lon_smoothed_rolling_windows"] = mean_lon
@@ -553,11 +563,12 @@ def data_rolling_windows_gps_data(df: pd.DataFrame, config: dict) -> pd.DataFram
 
             row_dict = df.iloc[i].copy().to_dict()
             midpoint_time = 0.5 * (t_arr[i] + t_arr[j - 1])
-            row_dict["time_numeric"] = midpoint_time
+           # row_dict["time_numeric"] = midpoint_time
             row_dict[speed_col] = mean_spd
             row_dict["GPS_lat_smoothed_rolling_windows"] = mean_lat
             row_dict["GPS_lon_smoothed_rolling_windows"] = mean_lon
-            row_dict["segment_marker"] = "MOVING"
+            speed_class = get_speed_class(mean_spd, speed_bins)  # Get the speed class
+            row_dict["segment_marker"] = f"MOVING_{speed_class}"  # Append class info
             grouped_rows.append(row_dict)
 
             i = j
@@ -595,13 +606,13 @@ def data_get_elevation(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame
 
     logger.info("Continuing with the script execution...")
 
-    required_keys = ["api_key", "elevation_column", "api_url", "batch_size", "threads"]
+    required_keys = ["api_key", "elevation", "api_url", "batch_size", "threads"]
     missing_keys = [key for key in required_keys if key not in config]
     if missing_keys:
         raise KeyError(f"Missing configuration keys: {missing_keys}")
 
     api_key = config["api_key"]
-    elevation_column = config["elevation_column"]
+    elevation_column = config["elevation"]
     api_url = config["api_url"]
     batch_size = config["batch_size"]
     threads = config["threads"]
@@ -668,16 +679,18 @@ def data_get_elevation(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame
 def data_compute_traveled_distance(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFrame:
     """
     Compute the traveled distance between consecutive GPS points using geodesic distances.
-    Adds 'cumulative_distance' column.
+    Adds 'cumulative_distance_m' column.
 
     If possible, also attempt a spline-based approach, but only if enough unique points exist.
     """
     print("\n[FUNCTION] data_compute_traveled_distance: START")
 
+    distance = config["cumulative_distance_m"]
+
     lat_col, lon_col = csv_select_gps_columns(
         df,
         title="Select GPS Data for Distances",
-        prompt="Select the GPS data to use as input to calculate the distance traveled:"
+        prompt="Select the GPS data to use as input \n to calculate the distance traveled:"
     )
     print(f"  > Selected lat_col='{lat_col}', lon_col='{lon_col}'")
 
@@ -720,8 +733,8 @@ def data_compute_traveled_distance(df: pd.DataFrame, config: Dict[str, Any]) -> 
         geodesic_distances.append(dist)
     geodesic_distances.insert(0, 0)
 
-    df["cumulative_distance"] = np.cumsum(geodesic_distances)
-    print(f"  > Added 'cumulative_distance' column. Sample: {df['cumulative_distance'].head()}")
+    df[distance] = np.cumsum(geodesic_distances)
+    print(f"  > Added {distance} column. Sample: {df[distance].head()}")
 
     print("[FUNCTION] data_compute_traveled_distance: END\n")
     return df
@@ -733,12 +746,12 @@ def data_compute_gradient(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFr
     and horizontal distance. Adds columns 'gradient' and 'gradient_promille' by default.
     """
     print("\n[FUNCTION] data_compute_gradient: START")
-    elevation_col = config.get("elevation_column", "elevation")
-    horizontal_distance_col = config.get("horizontal_distance_column", "cumulative_distance")
-    gradient_col = config.get("gradient_column", "gradient")
-    gradient_promille_col = config.get("gradient_promille_column", "gradient_promille")
+    elevation_col = config["elevation"]
+    distance_col = config["cumulative_distance_m"]
+    gradient_col = config["gradient"]
+    gradient_promille_col = config["gradient_per_mille"]
 
-    for col in [elevation_col, horizontal_distance_col]:
+    for col in [elevation_col, distance_col]:
         if col not in df.columns:
             raise ValueError(f"Required column '{col}' not found in DataFrame.")
 
@@ -747,10 +760,11 @@ def data_compute_gradient(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFr
 
     for i in range(1, len(df)):
         elev_diff = df.iloc[i][elevation_col] - df.iloc[i - 1][elevation_col]
-        horiz_diff = df.iloc[i][horizontal_distance_col] - df.iloc[i - 1][horizontal_distance_col]
+        horiz_diff = df.iloc[i][distance_col] - df.iloc[i - 1][distance_col]
         grad = elev_diff / horiz_diff if horiz_diff != 0 else 0.0
         gradients.append(grad)
         gradients_promille.append(grad * 1000)
+        
 
     df[gradient_col] = gradients
     df[gradient_promille_col] = gradients_promille
@@ -759,130 +773,612 @@ def data_compute_gradient(df: pd.DataFrame, config: Dict[str, Any]) -> pd.DataFr
     print("[FUNCTION] data_compute_gradient: END\n")
     return df
 
-def data_compute_curvature_radius_and_detect_steady_curves(
-    df: pd.DataFrame, config: dict = None
-) -> pd.DataFrame:
+
+def data_compute_curvature_and_radius(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
-    1) Compute signed curvature & radius (with sign).
-    2) Apply threshold for "straight line" if radius > e.g. 11000.
-    3) Segment the data using a variable-window approach for 'steady curves'.
-    4) Optionally compute mean radius/curvature for each segment.
+    Computes curvature and radius from heading data for the selected heading columns.
+    
+    Process:
+      1. Identify candidate heading columns in df that contain "heading" but not "yaw_rate".
+      2. Use the select_heading_columns_gui() function to choose one or more heading columns.
+      3. For each selected heading column:
+         - Compute the heading differences (normalized to [-180, 180] degrees).
+         - Convert the differences to radians.
+         - Compute the incremental distance (ds) using the differences of the cumulative distance column.
+         - Calculate:
+                curvature = heading_diff_rad / ds
+                radius = ds / heading_diff_rad
+         - Apply the straight-line threshold: if |radius| > straight_threshold, set radius = inf and curvature = 0.
+         - Store the computed radius and curvature in new uniquely named columns.
+    
+    The config dictionary is read using config["key"] notation.
     """
-    print("\n[FUNCTION] data_compute_curvature_radius_and_detect_steady_curves: START")
-    import numpy as np
+    print("[FUNCTION] data_compute_curvature_and_radius: START")
 
-    if config is None:
-        config = {}
+    # Identify candidate heading columns: include columns with "heading" but exclude those with "yaw_rate"
+    heading_candidates = [col for col in df.columns
+                          if "heading" in col.lower() and "yaw_rate" not in col.lower()]
+    if not heading_candidates:
+        print("[ERROR] No appropriate heading columns found in DataFrame.")
+        return df
 
-    def compute_radius_and_curvature_with_threshold(df_inner: pd.DataFrame, config: dict) -> None:
-        print("[DEBUG] Starting compute_radius_and_curvature_with_threshold")
-        distance_col = config.get("distance_col", "cumulative_distance")
-        heading_col = config.get("heading_col", "heading_deg_ds")
-        radius_col = config.get("radius_col", "radius_m")
-        curvature_col = config.get("curvature_col", "curvature")
-        straight_threshold = config.get("straight_threshold", 11000.0)
+    # Use GUI to select heading columns
+    selected_headings = select_heading_columns_gui(heading_candidates, caller="curvature and radius")
+    if not selected_headings:
+        print("[ERROR] No heading columns selected.")
+        return df
 
-        # Compute heading differences in degrees
-        heading_diff_deg = df_inner[heading_col].diff()
+    # Read configuration parameters
+    cum_dist_col = config["cumulative_distance_m"]
+    radius_col_base = config["radius_m"]
+    curvature_col_base = config["curvature"]
+    straight_threshold = config["straight_threshold"]
+
+    # Compute incremental distance (ds) from the cumulative distance column
+    ds = df[cum_dist_col].diff()
+    ds.fillna(method="bfill", inplace=True)  # fill the first NaN with the next valid value
+
+    for heading_col in selected_headings:
+        print(f"[INFO] Processing heading column: {heading_col}")
+
+        # Compute differences in heading (in degrees) and normalize to [-180, 180]
+        heading_diff_deg = df[heading_col].diff()
         heading_diff_deg = (heading_diff_deg + 180) % 360 - 180
         heading_diff_deg = heading_diff_deg.fillna(0)
-        print("[DEBUG] Heading differences (degrees) - first 5 values:")
+        print(f"[DEBUG] {heading_col} - Heading differences (deg) (first 5):")
         print(heading_diff_deg.head())
 
         # Convert differences to radians
         heading_diff_rad = heading_diff_deg * (np.pi / 180.0)
-        print("[DEBUG] Heading differences (radians) - first 5 values:")
+        print(f"[DEBUG] {heading_col} - Heading differences (rad) (first 5):")
         print(heading_diff_rad.head())
 
+        # Replace zeros with NaN to avoid division by zero
         heading_diff_rad_no_zero = heading_diff_rad.replace(0, np.nan)
 
-        # Compute radius and curvature
-        radius = df_inner[distance_col] / heading_diff_rad_no_zero
-        radius = radius.fillna(np.inf)
-        curvature = heading_diff_rad_no_zero / df_inner[distance_col]
+        # Compute curvature and radius using the incremental distance ds
+        curvature = heading_diff_rad_no_zero / ds
         curvature = curvature.fillna(0)
-        print("[DEBUG] Computed raw radius (first 5 values):")
+        radius = ds / heading_diff_rad_no_zero
+        radius = radius.fillna(np.inf)
+
+        print(f"[DEBUG] {heading_col} - Computed raw radius (first 5):")
         print(radius.head())
-        print("[DEBUG] Computed raw curvature (first 5 values):")
+        print(f"[DEBUG] {heading_col} - Computed raw curvature (first 5):")
         print(curvature.head())
 
-        # Apply threshold for "straight line"
-        too_large = radius.abs() > straight_threshold
-        count_too_large = too_large.sum()
-        if count_too_large > 0:
-            print(f"[DEBUG] {count_too_large} points exceed threshold {straight_threshold}. Setting radius to inf and curvature to 0.")
-        radius[too_large] = np.inf
-        curvature[too_large] = 0.0
+        # # Apply the straight-line threshold: if |radius| > straight_threshold, treat as straight line
+        # too_large = radius.abs() > straight_threshold
+        # if too_large.sum() > 0:
+        #     print(f"[DEBUG] {too_large.sum()} points in {heading_col} exceed threshold {straight_threshold}.")
+        #     print(f"[DEBUG] Setting radius to inf and curvature to 0 for those points.")
+        # radius[too_large] = np.inf
+        # curvature[too_large] = 0.0
 
-        df_inner[radius_col] = radius
-        df_inner[curvature_col] = curvature
-        print("[DEBUG] Finished compute_radius_and_curvature_with_threshold.\n")
+        # Create unique output column names for this heading column
+        out_radius_col = f"{radius_col_base}_{heading_col}"
+        out_curvature_col = f"{curvature_col_base}_{heading_col}"
 
-    def detect_steady_curves_variable_window(df_inner: pd.DataFrame, config: dict) -> None:
-        print("[DEBUG] Starting detect_steady_curves_variable_window")
-        curvature_col = config.get("curvature_col", "curvature")
-        std_threshold = config.get("curvature_std_thresh", 0.0001)
-        min_segment_size = config.get("min_segment_size", 3)
+        # Store computed values in the DataFrame
+        df[out_radius_col] = radius
+        df[out_curvature_col] = curvature
+        print(f"[INFO] Completed processing for {heading_col}. Output columns: {out_radius_col}, {out_curvature_col}\n")
 
-        c = df_inner[curvature_col].to_numpy()
-        n = len(c)
+    print("[FUNCTION] data_compute_curvature_and_radius: END")
+    return df
 
-        steady_group_ids = np.zeros(n, dtype=int)
-        group_id = 0
-        start_idx = 0
 
-        for i in range(n):
-            seg_curv = c[start_idx : i + 1]
-            curv_std = np.nanstd(seg_curv)
-            print(f"[DEBUG] i={i}, start_idx={start_idx}, current segment std={curv_std:.6f}")
 
-            if curv_std <= std_threshold:
-                # Keep extending the segment
-                continue
-            else:
-                seg_length = i - start_idx
-                if seg_length >= min_segment_size:
-                    group_id += 1
-                    steady_group_ids[start_idx : i] = group_id
-                    print(f"[DEBUG] Steady segment detected from index {start_idx} to {i-1} (length {seg_length}) with std {curv_std:.6f}; assigned group {group_id}")
-                else:
-                    print(f"[DEBUG] Segment from index {start_idx} to {i-1} too short (length {seg_length}); no group assigned.")
-                start_idx = i
 
-        # Final segment handling
-        seg_length = n - start_idx
-        if seg_length >= min_segment_size:
-            group_id += 1
-            steady_group_ids[start_idx : n] = group_id
-            print(f"[DEBUG] Final steady segment from index {start_idx} to {n-1} (length {seg_length}) assigned group {group_id}")
+def data_segment_train_curves3(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """
+    Segments a railway path into:
+      - "straight line": near-zero curvature
+      - "Übergangsbogen": transition segments with large d(kappa)/ds
+      - "curve": segments with fairly constant, nonzero curvature
+
+    Now uses "cumulative_distance_m" to compute slope w.r.t. distance, not index.
+
+    Required keys in 'config':
+      - "curvature": column name for computed curvature
+      - "radius": column name for computed radius
+      - "smoothing_window_nope": window size for smoothing curvature
+      - "straight_threshold_nope": max abs curvature for straight
+      - "transition_slope_threshold_nope": min abs slope for transition
+      - "curve_slope_threshold_nope": max abs slope for a steady curve
+      - "min_segment_size_nope": minimum number of points in a segment
+      - "radius_nope": column name for the computed radius
+      - (Additionally, the DataFrame must have "cumulative_distance_m")
+    """
+
+    # 1) Unpack config
+    curvature_col = config.get("curvature_nope", "curvature_heading_dx_ds_grad")
+    radius_col = config.get("radius_nope", "radius_m_heading_dx_ds_grad")
+    smoothing_window = config.get("smoothing_window_nope", 5)
+    straight_threshold = config.get("straight_threshold_nope", 0.001)
+    transition_slope_threshold = config.get("transition_slope_threshold_nope", 0.005)
+    curve_slope_threshold = config.get("curve_slope_threshold_nope", 0.001)
+    min_segment_size = config.get("min_segment_size_nope", 3)
+
+    # Ensure 'cumulative_distance_m' is in df
+    if "cumulative_distance_m" not in df.columns:
+        raise ValueError("DataFrame must have a 'cumulative_distance_m' column for distance-based slope.")
+
+    # 2) Smooth curvature (using Savitzky–Golay or rolling mean)
+    #    Savitzky–Golay requires an odd window_length:
+    if smoothing_window % 2 == 0:
+        smoothing_window += 1
+
+    # For demonstration, let's use Savitzky–Golay for curvature:
+    from scipy.signal import savgol_filter
+    polyorder = 2  # adjust if needed
+    curvature_array = df[curvature_col].values
+
+    curvature_smoothed = savgol_filter(
+        curvature_array,
+        window_length=smoothing_window,
+        polyorder=polyorder,
+        deriv=0
+    )
+    df["curvature_smoothed"] = curvature_smoothed
+
+    # 3) Compute slope wrt distance using a centered difference:
+    #    slope_i = (curv_{i+1} - curv_{i-1}) / (dist_{i+1} - dist_{i-1})
+    #    We'll handle edges with forward/backward diff.
+
+    # Shift arrays:
+    curv_shift_fwd = df["curvature_smoothed"].shift(-1)
+    curv_shift_bwd = df["curvature_smoothed"].shift(1)
+    dist_shift_fwd = df["cumulative_distance_m"].shift(-1)
+    dist_shift_bwd = df["cumulative_distance_m"].shift(1)
+
+    # Centered difference:
+    df["curvature_slope"] = (
+        (curv_shift_fwd - curv_shift_bwd) /
+        (dist_shift_fwd - dist_shift_bwd)
+    )
+
+    # For the very first and last row, we can't do a centered diff.
+    # We'll fill them by forward/backward difference or just NaN:
+    df["curvature_slope"].iloc[0] = (
+        (df["curvature_smoothed"].iloc[1] - df["curvature_smoothed"].iloc[0]) /
+        (df["cumulative_distance_m"].iloc[1] - df["cumulative_distance_m"].iloc[0])
+    )
+    df["curvature_slope"].iloc[-1] = (
+        (df["curvature_smoothed"].iloc[-1] - df["curvature_smoothed"].iloc[-2]) /
+        (df["cumulative_distance_m"].iloc[-1] - df["cumulative_distance_m"].iloc[-2])
+    )
+
+    # 4) (Optional) Smooth the slope a bit more if needed:
+    df["curvature_slope"] = df["curvature_slope"].rolling(
+        window=5, center=True, min_periods=1
+    ).mean()
+
+    # 5) Classify each point
+    states = []
+    for i in range(len(df)):
+        curv = df["curvature_smoothed"].iloc[i]
+        slope = df["curvature_slope"].iloc[i]
+
+        abs_curv = abs(curv)
+        abs_slope = abs(slope)
+
+        # Example logic: prioritize transition detection if slope is large
+        if abs_slope >= transition_slope_threshold:
+            candidate_state = "Übergangsbogen"
+        elif abs_curv < straight_threshold:
+            candidate_state = "straight line"
         else:
-            print(f"[DEBUG] Final segment from index {start_idx} to {n-1} too short (length {seg_length}); no group assigned.")
+            # Slope is not large, curvature is not near-zero => curve
+            if abs_slope <= curve_slope_threshold:
+                candidate_state = "curve"
+            else:
+                candidate_state = "curve"
 
-        df_inner["steady_group"] = steady_group_ids
-        print(f"[DEBUG] Total steady segments detected: {group_id}\n")
+        states.append(candidate_state)
 
-    def compute_segment_means(df_inner: pd.DataFrame, config: dict) -> None:
-        print("[DEBUG] Starting compute_segment_means")
-        radius_col = config.get("radius_col", "radius_m")
-        curvature_col = config.get("curvature_col", "curvature")
+    df["initial_state"] = states
 
-        df_inner["steady_mean_radius"] = df_inner.groupby("steady_group")[radius_col].transform("mean")
-        df_inner["steady_mean_curvature"] = df_inner.groupby("steady_group")[curvature_col].transform("mean")
+    # 6) Group contiguous points into segments
+    df["segment_id"] = (df["initial_state"] != df["initial_state"].shift(1)).cumsum()
 
-        # Print group statistics
-        grouped = df_inner.groupby("steady_group").agg(
-            count=("steady_group", "count"),
-            mean_radius=(radius_col, "mean"),
-            mean_curvature=(curvature_col, "mean")
+    # 7) Finalize segment classification & compute radius
+    segment_types = {}
+    segment_radii = {}
+
+    for seg_id, seg_rows in df.groupby("segment_id"):
+        if len(seg_rows) < min_segment_size:
+            segment_types[seg_id] = "undefined"
+            segment_radii[seg_id] = np.nan
+            continue
+
+        seg_state = seg_rows["initial_state"].iloc[0]
+        if seg_state == "Übergangsbogen":
+            segment_types[seg_id] = "Übergangsbogen"
+            segment_radii[seg_id] = np.nan
+        elif seg_state == "straight line":
+            segment_types[seg_id] = "straight line"
+            segment_radii[seg_id] = np.nan
+        else:
+            # "curve"
+            segment_types[seg_id] = "curve"
+            valid_radius = seg_rows[radius_col].replace(np.inf, np.nan)
+            segment_radii[seg_id] = valid_radius.mean()
+
+    df["segment_type"] = df["segment_id"].map(segment_types)
+    df["mittelradius"] = df["segment_id"].map(segment_radii)
+
+    # 8) Clean up
+    df.drop(
+        columns=["curvature_smoothed", "curvature_slope", "initial_state", "segment_id"],
+        inplace=True
+    )
+
+    return df
+
+
+
+import pwlf
+def data_segment_train_curves5(df, config):
+    """
+    Fit piecewise linear segments to curvature vs. distance (cumulated_distance_m).
+    Then label each piece as 'straight line', 'transition', or 'curve'.
+
+    config expects:
+      - 'curvature': column name for curvature (e.g. 'curvature_heading_dx_ds_grad')
+      - 'distance_col': column name for distance (e.g. 'cumulated_distance_m')
+      - 'num_segments': how many linear segments to fit (e.g. 5)
+      - 'straight_curv_tol': if a piece's mean curvature < this => 'straight line'
+      - 'slope_tol': slope threshold to define 'transition' vs. 'steady' (e.g. 0.0005)
+    """
+    curvature_col = 'curvature_heading_dx_ds_grad'
+    distance_col = 'cumulative_distance_m'
+    num_segments = config.get('num_segments', 5)
+    straight_curv_tol = config.get('straight_curv_tol', 0.00005)
+    slope_tol = config.get('slope_tol', 0.0005)
+
+    print("Configuration:")
+    print("  curvature_col:", curvature_col)
+    print("  distance_col:", distance_col)
+    print("  num_segments:", num_segments)
+    print("  straight_curv_tol:", straight_curv_tol)
+    print("  slope_tol:", slope_tol)
+
+    # Extract arrays
+    x = df[distance_col].values
+    y = df[curvature_col].values
+
+    mask = np.isfinite(x) & np.isfinite(y)
+
+    # Filter the arrays
+    x = x[mask]
+    y = y[mask]
+
+    print("\nData arrays (first 5 entries):")
+    print("  x:", x[:5])
+    print("  y:", y[:5])
+
+    # 1) Fit piecewise linear
+    my_pwlf = pwlf.PiecewiseLinFit(x, y)
+    print("test")
+    # Fit with 'num_segments' line segments
+    res = my_pwlf.fit(num_segments)  # returns SSE
+    print("\nPiecewise linear fit completed.")
+    print("  Sum of Squared Errors (SSE):", res)
+
+    # 2) The breakpoints in 'x' are:
+    breakpoints = my_pwlf.fit_breaks  # e.g. array([x_min, ..., x_max])
+    print("\nBreakpoints:")
+    print(" ", breakpoints)
+
+    # 3) For each segment, retrieve slope & intercept and classify the segment.
+    segment_info = []
+    slopes = my_pwlf.slopes
+    intercepts = my_pwlf.intercepts
+
+    print("\nSegment slopes and intercepts:")
+    print("  Slopes:", slopes)
+    print("  Intercepts:", intercepts)
+
+    # breakpoints => [s0, s1, s2, ..., sN], so segment i is in [s_{i}, s_{i+1}]
+    for i in range(len(slopes)):
+        seg_start = breakpoints[i]
+        seg_end   = breakpoints[i+1]
+        seg_slope = slopes[i]
+        seg_intercept = intercepts[i]
+
+        # Compute midpoint for average curvature estimation.
+        mid_s = 0.5 * (seg_start + seg_end)
+        mid_curv = seg_slope * mid_s + seg_intercept
+
+        # Classification logic:
+        abs_slope = abs(seg_slope)
+        abs_mid_curv = abs(mid_curv)
+
+        if abs_slope < slope_tol:
+            if abs_mid_curv < straight_curv_tol:
+                seg_type = "straight line"
+            else:
+                seg_type = "curve"
+        else:
+            seg_type = "Übergangsbogen"  # transition
+
+        print(f"\nSegment {i}:")
+        print("  Start distance:", seg_start)
+        print("  End distance:", seg_end)
+        print("  Slope:", seg_slope)
+        print("  Intercept:", seg_intercept)
+        print("  Midpoint:", mid_s)
+        print("  Mean curvature estimate:", mid_curv)
+        print("  Classified as:", seg_type)
+
+        segment_info.append({
+            "segment_index": i,
+            "start_distance": seg_start,
+            "end_distance": seg_end,
+            "slope": seg_slope,
+            "intercept": seg_intercept,
+            "mean_curvature_est": mid_curv,
+            "segment_type": seg_type
+        })
+
+    result_df = pd.DataFrame(segment_info)
+    print("\nResulting segments DataFrame:")
+    print(result_df)
+    return result_df
+
+
+import ruptures as rpt
+
+def data_segment_train_curves15(df, config):
+    """
+    Fügt dem DataFrame zwei neue Spalten hinzu:
+      - 'segment_class': Klassifikation des Segments anhand des Krümmungsverhaltens ("gerade Linie", "Kurve" oder "Übergangsbogen")
+      - 'mittelradius': Berechneter Mittelradius des Segments (1/|Mittelwert der Krümmung|; bei nahezu 0 wird np.inf gesetzt)
+
+    Parameter in config:
+      - 'curvature': Spaltenname für die Krümmung (z.B. 'curvature_heading_dx_ds_grad')
+      - 'distance_col': Spaltenname für die Distanz (z.B. 'cumulative_distance_m')
+      - 'straight_curv_tol': Schwellenwert, unter dem die durchschnittliche Krümmung als "gerade Linie" gilt
+      - 'delta_tol': Mindestdifferenz der Krümmung (von Anfang zu Ende eines Segments), um ein Segment als Übergangsbogen zu kennzeichnen
+      - 'penalty': Penalty-Parameter für ruptures (je höher, desto weniger Change Points)
+    """
+    # Parameter aus config
+    curvature_col    = config.get('curvature_nope', 'curvature_heading_dx_ds_grad')
+    distance_col     = config.get('distance_col', 'cumulative_distance_m')
+    straight_curv_tol = config.get('straight_curv_tol', 0.00005)
+    delta_tol        = config.get('delta_tol', 0.03 )
+    penalty          = config.get('penalty', 0.001)
+
+    # Kopie des DataFrames, um das Original zu erhalten
+    df_new = df.copy()
+
+    # Extrahiere die Arrays (als float)
+    x = np.array(df_new[distance_col].values, dtype=float)
+    y = np.array(df_new[curvature_col].values, dtype=float)
+
+    # Ersetze unendliche Werte (Inf) mit 0, da diese als gerade Linie interpretiert werden sollen
+    y = np.where(np.isinf(y), 999, y)
+
+    # Change-Point-Detection mit ruptures (Pelt-Algorithmus, Modell "l2")
+    algo = rpt.Pelt(model="l2").fit(y)
+    change_points = algo.predict(pen=penalty)
+    print("Gefundene Change Points (als Indizes):", change_points)
+
+    # Neue Spalte für die Klassifikation initialisieren
+    df_new['segment_class'] = 'unclassified'
+    # Neue Spalte für den Mittelradius initialisieren
+    df_new['mittelradius'] = 0.0
+
+    start_idx = 0
+    for cp in change_points:
+        seg_indices = np.arange(start_idx, cp)
+        seg_y = y[start_idx:cp]
+        seg_x = x[start_idx:cp]
+        if len(seg_y) < 2:
+            segment_class = 'zu klein'
+            mittelradius = np.nan
+        else:
+            mean_curv = np.mean(seg_y)
+            # Änderung der Krümmung vom Anfang bis zum Ende des Segments
+            delta_curv = abs(seg_y[-1] - seg_y[0])
+            print(f"Segment {start_idx}-{cp}: mean_curv = {mean_curv:.6f}, delta_curv = {delta_curv:.6f}")
+
+            if mean_curv < straight_curv_tol:
+                segment_class = "gerade Linie"
+            elif delta_curv > delta_tol:
+                segment_class = "Übergangsbogen"
+            else:
+                segment_class = "Kurve"
+
+            # Berechnung des Mittelradius: Bei nahezu 0 Krümmung (gerade Linie) als unendlich setzen,
+            # sonst 1/|mean_curv|
+            if abs(mean_curv) < 1e-10:
+                mittelradius = float('inf')
+            else:
+                mittelradius = 1 / abs(mean_curv)
+
+        print(f"Segment von Index {start_idx} bis {cp} klassifiziert als: {segment_class}, Mittelradius: {mittelradius}")
+        df_new.loc[seg_indices, 'segment_class'] = segment_class
+        df_new.loc[seg_indices, 'mittelradius'] = mittelradius
+        start_idx = cp
+
+    return df_new
+
+
+
+
+from scipy.signal import savgol_filter
+
+def data_segment_train_curves(df, config):
+    """
+    Classify track segments (straight, transition, steady curve) and compute
+    mean radius per contiguous segment.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input dataframe containing at least two columns:
+        - dist_col (default 'distance'): cumulative distance along the track
+        - curvature_col (default 'curvature'): measured or computed curvature
+    config : dict
+        Configuration dictionary with keys:
+        - 'curvature_col' (str): column name for curvature data
+        - 'dist_col' (str): column name for distance along the track (must be monotonic)
+        - 'eps' (float): threshold below which curvature is considered 'zero' (straight track)
+        - 'deriv_thresh' (float): threshold on curvature derivative for deciding transition vs steady curve
+        - 'window_length' (int): window size for Savitzky-Golay filter (must be odd, < len(df))
+        - 'polyorder' (int): polynomial order for Savitzky-Golay filter (must be < window_length)
+
+    Returns
+    -------
+    df : pandas.DataFrame
+        Same dataframe with added columns:
+        - 'curvature_smooth': Smoothed curvature
+        - 'dcurv': Numerical derivative of curvature w.r.t. distance
+        - 'straight_mask': Boolean indicating near-zero curvature
+        - 'steady_mask': Boolean indicating small derivative of curvature
+        - 'segment_type': One of {'straight', 'transition', 'steady_curve', 'unknown'}
+        - 'instant_radius': 1 / curvature_smooth (∞ if curvature_smooth is zero)
+        - 'segment_id': Numeric ID for each contiguous segment
+        - 'mean_radius': Mean radius in that segment (∞ if segment is straight)
+    """
+
+    # Extract config or set defaults
+    curvature_col = config.get('curvature_col', 'curvature_heading_dx_ds_grad')
+    dist_col      = config.get('dist_col', 'cumulative_distance_m')
+    eps           = config.get('eps', 1e-4)
+    deriv_thresh  = config.get('deriv_thresh', 1e-6)
+    window_length = config.get('window_length', 3)
+    polyorder     = config.get('polyorder', 1)
+
+    print("\n=== dat_segment_track DEBUG START ===")
+    print("Function parameters:")
+    print(f"  curvature_col = {curvature_col}")
+    print(f"  dist_col      = {dist_col}")
+    print(f"  eps           = {eps}")
+    print(f"  deriv_thresh  = {deriv_thresh}")
+    print(f"  window_length = {window_length}")
+    print(f"  polyorder     = {polyorder}")
+
+    print("\nDataFrame info at start:")
+    print("  df.shape:", df.shape)
+    print("  df.columns:", list(df.columns))
+    print("  First few rows:\n", df.head(3))
+
+    # 1) Smooth curvature data
+    try:
+        print("\n[Step 1] Smoothing curvature data with savgol_filter...")
+
+        # 1a) Convert the curvature column to a float NumPy array
+        #     (This avoids any object dtypes, multi-index confusion, etc.)
+        col_data = df[curvature_col].astype(float).to_numpy(copy=True)
+
+        # 1b) Replace inf, -inf, 0 in that array
+        col_data[np.isinf(col_data)] = 1e9
+        col_data[col_data == 0] = 1e-9
+
+        # 1c) Apply Savitzky-Golay filter on the array
+        smooth_arr = savgol_filter(col_data, window_length=window_length, polyorder=polyorder)
+
+        # 1d) Store back in the DataFrame
+        df['curvature_smooth'] = smooth_arr
+
+        print("  => df['curvature_smooth'] created successfully.")
+    except Exception as e:
+        print("  !! ERROR in smoothing step:", e)
+        raise
+
+    # 2) Identify near-zero curvature = straight
+    try:
+        print("\n[Step 2] Identifying near-zero curvature...")
+        df['straight_mask'] = np.abs(df['curvature_smooth']) < eps
+        print("  => df['straight_mask'] created. Example values:")
+        print(df['straight_mask'].head(3))
+    except Exception as e:
+        print("  !! ERROR in straight_mask step:", e)
+        raise
+
+    # 3) Compute derivative of curvature w.r.t. distance
+    try:
+        print("\n[Step 3] Computing derivative dcurv via np.gradient...")
+        df['dcurv'] = np.gradient(df['curvature_smooth'], df[dist_col])
+        print("  => df['dcurv'] created. Example values:")
+        print(df['dcurv'].head(3))
+    except Exception as e:
+        print("  !! ERROR in dcurv step:", e)
+        raise
+
+    # 4) Among non-straight points, check derivative magnitude
+    try:
+        print("\n[Step 4] Creating steady_mask...")
+        df['steady_mask'] = (np.abs(df['dcurv']) < deriv_thresh) & ~df['straight_mask']
+        print("  => df['steady_mask'] created. Example values:")
+        print(df['steady_mask'].head(3))
+    except Exception as e:
+        print("  !! ERROR in steady_mask step:", e)
+        raise
+
+    # 5) Assign segment_type using np.select
+    try:
+        print("\n[Step 5] Assigning segment_type with np.select...")
+        conditions = [
+            df['straight_mask'],
+            (~df['straight_mask']) & (~df['steady_mask']),
+            df['steady_mask']
+        ]
+        choices = ['straight', 'transition', 'steady_curve']
+        df['segment_type'] = np.select(conditions, choices, default='unknown')
+        print("  => df['segment_type'] created. Example distribution:")
+        print(df['segment_type'].value_counts())
+    except Exception as e:
+        print("  !! ERROR in segment_type step:", e)
+        raise
+
+    # 6) Compute instantaneous radius
+    try:
+        print("\n[Step 6] Computing instantaneous radius...")
+        df['instant_radius'] = np.where(
+            np.isclose(df['curvature_smooth'], 0.0, atol=1e-12),
+            np.inf,
+            1.0 / df['curvature_smooth']
         )
-        print("[DEBUG] Segment means computed for each steady group:")
-        print(grouped)
-        print("[DEBUG] Finished compute_segment_means.\n")
+        print("  => df['instant_radius'] created. Example values:")
+        print(df['instant_radius'].head(3))
+    except Exception as e:
+        print("  !! ERROR in instant_radius step:", e)
+        raise
 
-    print(f"[DEBUG] Input dataframe shape: {df.shape}")
-    compute_radius_and_curvature_with_threshold(df, config)
-    detect_steady_curves_variable_window(df, config)
-    compute_segment_means(df, config)
+    # 7) Define a segment_id that increments when 'segment_type' changes
+    try:
+        print("\n[Step 7] Defining segment_id by checking changes in segment_type...")
+        df['segment_id'] = (df['segment_type'] != df['segment_type'].shift(1)).cumsum()
+        print("  => df['segment_id'] created. Example values:")
+        print(df[['segment_type','segment_id']].head(10))
+    except Exception as e:
+        print("  !! ERROR in segment_id step:", e)
+        raise
 
-    print("[FUNCTION] data_compute_curvature_radius_and_detect_steady_curves: END\n")
+    # 8) Compute mean radius per segment
+    try:
+        print("\n[Step 8] Grouping by segment_id to compute mean_radius...")
+        mean_radius_per_segment = df.groupby('segment_id')['instant_radius'].mean()
+        df['mean_radius'] = df['segment_id'].map(mean_radius_per_segment)
+        print("  => df['mean_radius'] assigned via groupby. Example values:")
+        print(df['mean_radius'].head(3))
+    except Exception as e:
+        print("  !! ERROR in mean_radius step:", e)
+        raise
+
+    # 9) Force mean_radius to ∞ for straight segments
+    try:
+        print("\n[Step 9] Setting mean_radius = ∞ for straight segments...")
+        df.loc[df['segment_type'] == 'straight', 'mean_radius'] = np.inf
+        print("  => done. Checking final distribution of mean_radius:")
+        print(df['mean_radius'].head(10))
+    except Exception as e:
+        print("  !! ERROR in final step for mean_radius assignment:", e)
+        raise
+
+    print("\n=== dat_segment_track DEBUG END ===\n")
     return df

@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Read CSV
-df = pd.read_csv('subsets_by_date/2024-04-02/2024-04-02_time_rollingW_planar_distance_headingDX_headingDS_yawRate.csv')
+df = pd.read_csv('subsets_by_date/2024-04-02/2024-04-02_time_rollingW_planar_distance_headingDS_NEW!.csv')
 
 # We'll assume these columns all exist
 x = df['x']
@@ -30,14 +30,15 @@ plt.plot(x, y, 'b-', label='Train Path')
 # Plot every Nth arrow
 indices = np.arange(0, len(df), 20)
 
+
 plt.quiver(x.iloc[indices], y.iloc[indices],
            dx_ds.iloc[indices], dy_ds.iloc[indices],
-           color='b', scale=500, width=0.0001, label='Heading (dx/ds)')
+           color='b', scale=None, width=0.0001, label='Heading (dx/ds)')
 
 plt.quiver(x.iloc[indices], y.iloc[indices],
            dx_dx.iloc[indices], dy_dx.iloc[indices],
            color='g', scale=500, width=0.0001, label='Heading (dx/dy)')
-
+plt.axis('equal')
 plt.xlabel('X Coordinate')
 plt.ylabel('Y Coordinate')
 plt.title('Train Path with Corrected Heading Display')

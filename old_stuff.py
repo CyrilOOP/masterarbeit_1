@@ -1816,3 +1816,278 @@ def data_compute_curvature_radius_and_detect_steady_curves(
     print("[FUNCTION] data_compute_curvature_radius_and_detect_steady_curves: END\n")
     return df
 
+
+def data_circle_fit_compute_radius(df: pd.DataFrame, config: dict = None) -> pd.DataFrame:
+    """
+    Computes circle-fit parameters for a sliding window over (x, y) points.
+
+    Rather than writing a radius for each window, this function groups together
+    consecutive windows whose fitted radii are similar. It then assigns a group ID
+    and the group’s average radius to all rows that fall within that group’s range.
+
+    The function includes checks so that:
+      - A circle is computed only if there are at least a minimum number of points (min_points).
+      - The computed circle's radius must lie within [min_radius, max_radius].
+      - If the circle fit's average residual exceeds a specified threshold (residual_threshold),
+        the fit is rejected (set to NaN).
+      - After computing valid windows, adjacent windows with similar radii (within
+        group_radius_tolerance) are grouped together.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Must include x and y coordinates.
+    config : dict, optional
+        Configuration options:
+            - "x_col": (str) Column name for x coordinate (default "x").
+            - "y_col": (str) Column name for y coordinate (default "y").
+            - "radius_col": (str) Name of output column for computed radius (default "radius_m").
+            - "window_size": (int) Number of points used for each circle fit (default 20).
+            - "store_mode": (str) "center" or "all" (default "center").
+                           ("center" is used internally for grouping.)
+            - "residual_threshold": (float) Maximum allowed average residual (default 1).
+                           The residual is the mean absolute difference between each point’s
+                           distance from the fitted circle center and the computed radius.
+            - "min_radius": (float) Minimum acceptable circle radius (default 300).
+            - "max_radius": (float) Maximum acceptable circle radius (default 12000).
+            - "min_points": (int) Minimum number of points required in a window (default 3).
+            - "group_radius_tolerance": (float) Maximum difference allowed between radii of adjacent
+                           windows for them to be considered part of the same circle (default 50).
+
+    Returns
+    -------
+    pd.DataFrame
+        The original DataFrame with two new columns:
+            - "circle_group": an integer group ID for points belonging to the same circle.
+            - (radius_col): the average radius for that group.
+        Only segments with at least one valid window are assigned a group.
+    """
+    # Use defaults if config is None
+    if config is None:
+        config = {}
+
+    # Configuration parameters
+    x_col = config["x_col", "x")
+    y_col = config["y_col", "y")
+    radius_col = config["radius_col", "radius_m_circle")
+    window_size = config["window_size", 20)
+    # We use store_mode "center" for grouping; other modes are not applicable here.
+    residual_threshold = config["residual_threshold", 1)
+    min_radius = config["min_radius", 300)
+    max_radius = config["max_radius", 12000)
+    min_points = config["min_points", 3)
+    group_tolerance = config["group_radius_tolerance", 50)
+
+    if window_size < min_points:
+        raise ValueError("window_size must be at least as large as min_points.")
+
+    if x_col not in df.columns or y_col not in df.columns:
+        raise ValueError(f"DataFrame must contain columns '{x_col}' and '{y_col}'.")
+
+    # Nested helper: circle fitting using the Kasa method.
+    def _fit_circle_kasa(x: np.ndarray, y: np.ndarray):
+        """
+        Fits a circle to the provided x,y points using Kasa's method.
+        Returns the circle center (x0, y0) and the radius r.
+        """
+        A = np.column_stack((x, y, np.ones_like(x)))
+        b = x**2 + y**2
+        sol, residuals, rank, s = np.linalg.lstsq(A, b, rcond=None)
+        A_, B_, C_ = sol
+        x0 = A_ / 2.0
+        y0 = B_ / 2.0
+        r = np.sqrt(C_ + x0**2 + y0**2)
+        return x0, y0, r
+
+    # First pass: slide the window and record valid window fits.
+    # We'll store each result as a dict with:
+    #  - pos: the center position (integer index) of the window,
+    #  - r: the computed radius,
+    #  - residual: the fit residual.
+    results = []
+    n = len(df)
+    for start_idx in range(0, n - window_size + 1):
+        end_idx = start_idx + window_size
+        # Only proceed if the window has at least min_points (should always be true here)
+        if end_idx - start_idx < min_points:
+            continue
+
+        x_window = df[x_col].iloc[start_idx:end_idx].to_numpy()
+        y_window = df[y_col].iloc[start_idx:end_idx].to_numpy()
+
+        # Fit circle
+        x0, y0, r = _fit_circle_kasa(x_window, y_window)
+
+        # Compute the residual: average absolute difference between each point's
+        # distance from the fitted center and the computed radius.
+        dists = np.sqrt((x_window - x0)**2 + (y_window - y0)**2)
+        residual = np.mean(np.abs(dists - r))
+
+        # Reject the fit if the residual is too high.
+        if residual_threshold is not None and residual > residual_threshold:
+            continue
+
+        # Reject if radius is outside the allowed range.
+        if (min_radius is not None and r < min_radius) or (max_radius is not None and r > max_radius):
+            continue
+
+        # Use the center index of the window as representative.
+        center_pos = start_idx + (window_size // 2)
+        results.append({"pos": center_pos, "r": r, "residual": residual})
+
+    # If no valid windows were found, return df without grouping.
+    if not results:
+        print("No valid circle fits were found.")
+        df["circle_group"] = np.nan
+        return df
+
+    # Second pass: group consecutive window results that have similar radii.
+    groups = []
+    current_group = [results[0]]
+    for res in results[1:]:
+        # Compare the current window's radius with the average radius of the current group.
+        current_avg = np.mean([g["r"] for g in current_group])
+        if abs(res["r"] - current_avg) <= group_tolerance:
+            current_group.append(res)
+        else:
+            groups.append(current_group)
+            current_group = [res]
+    if current_group:
+        groups.append(current_group)
+
+    # Create new columns for group ID and group radius.
+    df["circle_group"] = np.nan
+    df[radius_col] = np.nan
+
+    # For each group, determine the span in terms of row positions.
+    group_id = 1
+    for group in groups:
+        # Use the group's average radius.
+        group_avg_r = np.mean([g["r"] for g in group])
+        # Define the group span from the first to the last window center in this group.
+        start_pos = group[0]["pos"]
+        end_pos = group[-1]["pos"]
+        # Fill the rows between these positions with the group info.
+        df.iloc[start_pos:end_pos+1, df.columns.get_loc("circle_group")] = group_id
+        df.iloc[start_pos:end_pos+1, df.columns.get_loc(radius_col)] = group_avg_r
+        group_id += 1
+
+    return df
+
+
+import math
+
+
+
+def data_add_heading_column(df, config):
+    """
+    Given a DataFrame with GPS coordinates and a configuration dictionary specifying:
+      - 'lat_col': the column name for latitude,
+      - 'lon_col': the column name for longitude,
+      - 'heading_col': the name of the new column to add for headings,
+    this function calculates the initial bearing (heading) from each point to the next
+    using a nested heading calculation function, then adds a new column with these values.
+
+    The last row will have a heading value of None since there is no next point.
+    """
+    lat_col = config["lat_acfndhvcol", "GPS_lat_smoothed_rolling_windows")
+    lon_col = config["lon_jndvhfcol", "GPS_lon_smoothed_rolling_windows")
+    heading_col = config["heading_col_new", "heading_dx_dy") #careful with that it replaced the other !!
+
+    def calculate_heading(lat1, lon1, lat2, lon2):
+        # Convert degrees to radians
+        lat1_rad, lon1_rad = math.radians(lat1), math.radians(lon1)
+        lat2_rad, lon2_rad = math.radians(lat2), math.radians(lon2)
+        dLon = lon2_rad - lon1_rad
+
+        x = math.sin(dLon) * math.cos(lat2_rad)
+        y = math.cos(lat1_rad) * math.sin(lat2_rad) - math.sin(lat1_rad) * math.cos(lat2_rad) * math.cos(dLon)
+        initial_bearing = math.atan2(x, y)
+        # Convert the bearing from radians to degrees and normalize to 0-360.
+        initial_bearing = math.degrees(initial_bearing)
+        compass_bearing = (initial_bearing + 360) % 360
+        return compass_bearing
+
+    headings = []
+    for i in range(len(df)):
+        if i < len(df) - 1:
+            lat1 = df.iloc[i][lat_col]
+            lon1 = df.iloc[i][lon_col]
+            lat2 = df.iloc[i + 1][lat_col]
+            lon2 = df.iloc[i + 1][lon_col]
+            heading = calculate_heading(lat1, lon1, lat2, lon2)
+            headings.append(heading)
+        else:
+            headings.append(None)  # Last point has no next point.
+
+    df[heading_col] = headings
+    return df
+
+
+def data_segment_train_curves(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """
+    Segments the train path into three types:
+      - "straight line": segments where the (smoothed) curvature is nearly zero.
+      - "curve": steady curve segments where the curvature is stable.
+      - "Übergangsbogen": transition curves between straight lines and curves.
+
+    For segments labeled as "curve", the mean radius (mittelradius) is computed.
+
+    New columns added to the DataFrame:
+      - "segment_type": with values "straight line", "Übergangsbogen", or "curve"
+      - "mittelradius": mean radius for the curve segments (NaN otherwise)
+
+    Config dictionary must include:
+      - "curvature": column name for computed curvature (using incremental distance)
+      - "radius_m": column name for computed radius (using incremental distance)
+      - "smoothing_window": window size for smoothing the curvature (e.g., 5)
+      - "straight_curvature_threshold": threshold for absolute curvature to be considered straight (e.g., 0.001)
+      - "steady_std_threshold": maximum standard deviation in the smoothed curvature to be considered a steady curve (e.g., 0.005)
+      - "min_segment_size": minimum number of points in a segment to consider it valid (e.g., 10)
+    """
+    # 1. Smooth the curvature to reduce noise.
+    window = config["smoothing_window_radius"]
+    df["curvature_smoothed"] = df[config["curvature_fuck"]].rolling(window=window, center=True, min_periods=1).mean()
+
+    # 2. Identify straight segments: where the absolute smoothed curvature is below a threshold.
+    straight_threshold = config["straight_curvature_threshold"]
+    df["is_straight"] = df["curvature_smoothed"].abs() < straight_threshold
+
+    # 3. Create contiguous segment groups based on changes in the is_straight flag.
+    #    Every time the flag changes, we increment a segment id.
+    df["segment_id"] = (df["is_straight"] != df["is_straight"].shift(1)).cumsum()
+
+    # Dictionaries to store the segment type and (if applicable) the mean radius.
+    segment_types = {}
+    segment_radii = {}
+
+    steady_std_threshold = config["steady_std_threshold"]
+    min_segment_size = config["min_segment_size"]
+    radius_col = config["radius_m_fuck"]
+
+    # 4. Iterate over each segment.
+    for seg_id, seg in df.groupby("segment_id"):
+        if seg["is_straight"].iloc[0]:
+            # All points are straight if the smoothed curvature is nearly zero.
+            segment_types[seg_id] = "straight line"
+            segment_radii[seg_id] = np.nan
+        else:
+            # For non-straight segments, decide if they are steady curves.
+            if len(seg) >= min_segment_size and seg["curvature_smoothed"].std() < steady_std_threshold:
+                segment_types[seg_id] = "curve"
+                # Compute the mean radius for this segment (excluding infinite values).
+                valid_radius = seg[radius_col].replace(np.inf, np.nan)
+                mittelradius = valid_radius.mean()
+                segment_radii[seg_id] = mittelradius
+            else:
+                segment_types[seg_id] = "Übergangsbogen"
+                segment_radii[seg_id] = np.nan
+
+    # 5. Map the segment type and mean radius back to the DataFrame.
+    df["segment_type"] = df["segment_id"].map(segment_types)
+    df["mittelradius"] = df["segment_id"].map(segment_radii)
+
+    # Optionally, drop the temporary columns.
+    df.drop(columns=["curvature_smoothed", "is_straight", "segment_id"], inplace=True)
+
+    return df

@@ -56,7 +56,8 @@ from data_tools import (
     data_get_elevation,
     data_compute_traveled_distance,
     data_compute_gradient,
-    data_compute_curvature_radius_and_detect_steady_curves,
+    data_compute_curvature_and_radius,
+    data_segment_train_curves,
 )
 from map_generator import generate_map_from_csv
 import graph_tools  # Module containing graph functions
@@ -75,9 +76,10 @@ class DataProcessingApp(QMainWindow):
       - Provides input fields for minimum distance and quantile boundaries
       - Offers graphing options via checkboxes
     """
-    def __init__(self, default_config: Dict[str, bool], subset_folder: str, pre_selected_date: str = None):
+    def __init__(self, default_config: Dict[str, bool], subset_folder: str, graph_config: Dict[str, Any] = None, pre_selected_date: str = None):
         super().__init__()
         self.default_config = default_config
+        self.graph_config = graph_config if graph_config is not None else {}
         self.subset_folder = subset_folder
         self.pre_selected_date = pre_selected_date
 
@@ -97,6 +99,7 @@ class DataProcessingApp(QMainWindow):
         # Graphing dictionary: (human-readable name -> function name in graph_tools)
         self.available_graphs = {
             "Yaw rate comparison": "graph_yaw_rate_and_gier",
+            "curvature and radius": "plot_curvature_with_mittelradius",
         }
 
         # Widgets
@@ -394,11 +397,6 @@ class DataProcessingApp(QMainWindow):
         return group
 
     def on_generate_graphs(self):
-        """
-        Called when the 'Generate Graphs' button is clicked.
-        For each selected subset and selected graph type, calls the corresponding
-        function in graph_tools.
-        """
         selected_graphs = [name for name, cb in self.graph_checkboxes.items() if cb.isChecked()]
         if not selected_graphs:
             QMessageBox.warning(self, "Warning", "Please select at least one graph type!")
@@ -420,7 +418,8 @@ class DataProcessingApp(QMainWindow):
                 if func_name:
                     try:
                         graph_func = getattr(graph_tools, func_name)
-                        graph_func(subset_file)
+                        # Use the instance attribute self.graph_config instead of undefined config
+                        graph_func(subset_file, self.graph_config)
                     except Exception as e:
                         QMessageBox.critical(
                             self, "Error",
@@ -478,9 +477,12 @@ def main(config: Dict[str, Any], subsets: List[str]) -> None:
         ("compute_traveled_distance", data_compute_traveled_distance, "distance"),
         ("compute_heading_with_dy/dx", data_compute_heading_dx_dy, "headingDX"),
         ("compute_heading_with_dx/ds", data_compute_heading_ds, "headingDS"),
+#        ("data_add_heading_column", data_add_heading_column, "NEW!"),
         ("compute_yaw_rate_from_heading", data_compute_yaw_rate_from_heading, "yawRate"),
         ("delete_the_boundaries", data_delete_the_one_percent, "delBoundaries"),
-        ("compute_curvature_and_radius", data_compute_curvature_radius_and_detect_steady_curves, "radius"),
+        ("compute_curvature_and_radius", data_compute_curvature_and_radius, "radius"),
+        ("bogen_übergangsbogen", data_segment_train_curves, "übogen"),
+      #  ("radius_with_circle_method", data_circle_fit_compute_radius, "circle"),
         ("get_elevation", data_get_elevation, "elevation"),
         ("get_gradient", data_compute_gradient, "gradient"),
     ]
@@ -534,8 +536,11 @@ if __name__ == "__main__":
         "compute_traveled_distance": True,
         "compute_heading_with_dy/dx": True,
         "compute_heading_with_dx/ds": True,
+       # "data_add_heading_column" :True,
         "compute_yaw_rate_from_heading": True,
         "compute_curvature_and_radius": True,
+        "bogen_übergangsbogen" : True,
+      #  "radius_with_circle_method" :True,
         "delete_the_boundaries": False,
         "get_elevation": False,
         "get_gradient": False,
@@ -553,76 +558,60 @@ if __name__ == "__main__":
     selected_steps, selected_subsets, min_distance, lower_perc, upper_perc = window.get_results()
 
     CONFIG = {
-        "datetime_col" : "DatumZeit", # data_parse_time
-        "x_col": "x", # data_compute_heading_dx_dy, data_compute_heading_ds
-        "y_col": "y", # data_compute_heading_dx_dy data_compute_heading_ds
-        "heading_col_dx_dy" : "heading_dx_dy", # to create this column
-
-        
-        
-        
+        "DatumZeit" : "DatumZeit",
+        "x": "x",
+        "y": "y",
+        "elapsed_time_s" :"elapsed_time_s",
+        "heading_dx_dy_grad" : "heading_dx_dy_grad",
         "elapsed_time": "elapsed_time_s",
-        "dt": "delta_time_s",
-        "output_folder_for_subsets_by_date": "subsets_by_date",
-        "column_name": "DatumZeit",
-        "encoding": "utf-8",
-        "date_column": "DatumZeit",
+        "cumulative_distance_m" : "cumulative_distance_m",
+        "heading_dx_ds_grad" : "heading_dx_ds_grad",
         "speed_column": "Geschwindigkeit in m/s",
-        "acc_col_for_particule_filter": "Beschleunigung in m/s2",
-        "lat_col": "GPS_lat",
-        "lon_col": "GPS_lon",
-        "mid_speed_threshold_rolling_windows": 50.0,
-        "time_rolling_window_fast": 1.0,
 
-        "lat_col_smooth": "GPS_lat_smooth",
-        "lon_col_smooth": "GPS_lon_smooth",
-
-        "time_between_points": "dt",
-        "heading_col_for_yaw_rate_function": "heading_deg_ds",
-        "yaw_col_for_kalman": "yaw_rate_deg_s",
-        "N_for_particule_filter": 1000,
-        "threshold_for_outliers_removing": 0.005,
-        "min_distance": min_distance,
-        "delete_lower_bound_percentage": lower_perc,
-        "delete_upper_bound_percentage": upper_perc,
+        # for the rolling windows
         "speed_threshold_stopped_rolling_windows": 0.5,
         "distance_window_meters": 20,
         "time_window_min": 1.0,
         "time_window_max": 9999.0,
         "max_stop_window": 999999999.0,
         "speed_bins": [0.0, 0.5, 2.0, 5.0, 15.0, 30.0, float("inf")],
-        "yaw": "heading_deg_ds",
-        "yaw_rate": "yaw_rate_deg_s",
-        "speed": "Geschwindigkeit in m/s",
-        "speed_threshold_outliers": 2,
-        "dbscan_eps": 10,
-        "min_samples": 3,
-        "overpass_url": "https://overpass-api.de/api/interpreter",
-        "bbox": [47.2, 5.9, 55.1, 15.0],
-        "structure_threshold": 0.01,
-        "bridge_file": "bridges.csv",
-        "tunnel_file": "tunnels.csv",
-        "gps_quality_col": "GPS Qualität",
+        "hysteresis_window" : 10,
+        "output_folder_for_subsets_by_date": "subsets_by_date",
+
+        "encoding": "utf-8",
+
+        "gradient" :"gradient",
+        "gradient_per_mille" : "gradient_per_mille",
+
+
+        #### for the one percent
+        "delete_lower_bound_percentage": lower_perc,
+        "delete_upper_bound_percentage": upper_perc,
+
+
+        "elevation" : "elevation",
+
         "api_key": "AIzaSyAb7ec8EGcU5MiHlQ9jJETvABNYNyiq-WE",
         "api_url": "https://maps.googleapis.com/maps/api/elevation/json",
         "batch_size": 280,
         "threads": 10,
-        "elevation_column": "elevation",
-        "horizontal_distance_column": "cumulative_distance",
-        "gradient_promille_column": "gradient_promille",
-        "smoothing_windows": 50000,
-        "cumulative_distance": "cumulative_distance",
-        "speed_move": 0.8,
-        "speed_stop": 0.5,
-        "time_window": 3,
-        "time_step": 1.0,
-        "process_noise": 0.01,
-        "measurement_noise": 3.0,
-        "move_duration": 3,
-        "stop_duration": 5,
-        "time_column": "DatumZeit",
-        "x_col_heading_ds": "filtered_x",
-        "y_col_heading_ds": "filtered_y",
+
+
+        #for the curvature
+        "curvature" : "curvature",
+        "straight_threshold" : 50000.0,
+
+
+        "curvature_fuck" : "curvature_heading_dx_ds_grad",
+        "curvature_std_thresh" : 0,
+        "min_segment_size" : 6,
+        "smoothing_window_radius" : 5,
+        "smoothing_window_2" : 5,
+        "straight_curvature_threshold" : 0.01,
+        "steady_std_threshold" : 0.0005,
+
+        "radius_m" : "radius_m",
+        "radius_m_fuck" : "radius_m_heading_dx_ds_grad",
         **selected_steps
     }
 

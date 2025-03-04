@@ -346,7 +346,7 @@ def generate_map_from_csv(subset_full_path: str) -> None:
     # =================================================================================
     # 10. Draw Yaw Rate Path (From Heading) if Available
     # =================================================================================
-    yaw_rate_col = "yaw_rate_deg_s"
+    yaw_rate_col = "yaw_rate_from_heading_dx_ds_grad"
     if yaw_rate_col in df.columns and df[yaw_rate_col].notna().any():
         print("doing it")
         yaw_path_fg = folium.FeatureGroup(name="Yaw Rate from GPS", show=False)
